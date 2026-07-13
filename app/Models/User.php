@@ -17,6 +17,10 @@ class User extends Authenticatable
         'pin',
         'role',
         'active',
+        'store_id',
+        'email',
+        'password',
+        'auth_type',
     ];
 
     /**
@@ -24,6 +28,7 @@ class User extends Authenticatable
      */
     protected $hidden = [
         'pin',
+        'password',
     ];
 
     /**
@@ -34,6 +39,14 @@ class User extends Authenticatable
         return [
             'active' => 'boolean',
         ];
+    }
+
+    /**
+     * Relation: le Store auquel appartient ce User (si Store Admin)
+     */
+    public function store(): BelongsTo
+    {
+        return $this->belongsTo(Store::class);
     }
 
     /**

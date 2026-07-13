@@ -19,6 +19,7 @@ class AuthController extends Controller
 
     /**
      * Traiter la connexion PIN
+     * Filtre uniquement les utilisateurs PIN, pas les Store Admin
      */
     public function login(Request $request)
     {
@@ -30,6 +31,7 @@ class AuthController extends Controller
         $user = User::where('entity_id', $request->entity_id)
             ->where('pin', User::hashPin($request->pin))
             ->where('active', true)
+            ->where('auth_type', 'PIN')  // Bloque les Store Admin (auth_type=EMAIL_PASSWORD)
             ->first();
 
         if (!$user) {

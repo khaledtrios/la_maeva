@@ -1,7 +1,4 @@
-import { PropsWithChildren, useMemo, useState, useEffect } from 'react';
 import { router, usePage } from '@inertiajs/react';
-import { ToastContainer } from '@/Components/UI/ToastContainer';
-import { FlashMessage } from '@/Components/UI/FlashMessage';
 import {
     Factory,
     Cookie,
@@ -20,23 +17,27 @@ import {
     Circle,
     FileText,
 } from 'lucide-react';
+import type { PropsWithChildren} from 'react';
+import { useMemo, useState, useEffect } from 'react';
+import { FlashMessage } from '@/Components/UI/FlashMessage';
+import { ToastContainer } from '@/Components/UI/ToastContainer';
 import { logout, dashboard } from '@/routes';
-import type { Role } from '@/types';
 
-import { index as stockIndex } from '@/routes/stock';
+import { index as adminIndex } from '@/routes/admin';
+import commandesUrgentes from '@/routes/commandes-urgentes';
+import { index as expeditionsIndex } from '@/routes/expeditions';
+import { index as facturesIndex } from '@/routes/factures';
+import { index as haccpIndex } from '@/routes/haccp';
 import { index as inventoryIndex } from '@/routes/inventory';
+import { index as nonconformitesIndex } from '@/routes/nonconformites';
 import { index as productionIndex } from '@/routes/production';
 import { index as productsIndex } from '@/routes/products';
-import { index as expeditionsIndex } from '@/routes/expeditions';
 import { index as receptionsIndex } from '@/routes/receptions';
-import { index as salesIndex } from '@/routes/sales';
-import { index as haccpIndex } from '@/routes/haccp';
-import { index as nonconformitesIndex } from '@/routes/nonconformites';
 import { index as reportingIndex } from '@/routes/reporting';
-import { index as adminIndex } from '@/routes/admin';
-import { index as facturesIndex } from '@/routes/factures';
 import { index as returnsIndex } from '@/routes/returns';
-import commandesUrgentes from '@/routes/commandes-urgentes';
+import { index as salesIndex } from '@/routes/sales';
+import { index as stockIndex } from '@/routes/stock';
+import type { Role } from '@/types';
 
 type RouteObject = { url: (options?: Record<string, unknown>) => string };
 
@@ -198,7 +199,8 @@ const navigationByRole: Record<
     ],
 };
 
-function initials(name: string): string {
+function initials(name?: string | null): string {
+    if (!name) return '?';
     return name
         .split(' ')
         .map((w) => w[0])
@@ -220,18 +222,27 @@ function AppLayout({ children }: PropsWithChildren) {
 
     const navigation = useMemo(() => {
         const seen = new Set<string>();
+
         return Object.values(navigationByRole)
             .flat()
             .filter((item) => {
-                if (seen.has(item.name)) return false;
-                if (!hasRole(...item.roles)) return false;
+                if (seen.has(item.name)) {
+return false;
+}
+
+                if (!hasRole(...item.roles)) {
+return false;
+}
+
                 seen.add(item.name);
+
                 return true;
             });
     }, [user?.role]);
 
     useEffect(() => {
         document.body.style.overflow = sidebarOpen || moreOpen ? 'hidden' : '';
+
         return () => {
             document.body.style.overflow = '';
         };
@@ -245,6 +256,7 @@ function AppLayout({ children }: PropsWithChildren) {
             }
         };
         document.addEventListener('keydown', fn);
+
         return () => document.removeEventListener('keydown', fn);
     }, []);
 
@@ -348,7 +360,11 @@ function AppLayout({ children }: PropsWithChildren) {
                             const groupItems = navigation.filter((item) =>
                                 group.items.includes(item.name),
                             );
-                            if (groupItems.length === 0) return null;
+
+                            if (groupItems.length === 0) {
+return null;
+}
+
                             return (
                                 <div key={group.label}>
                                     <p className="mb-1 px-3 text-[10px] font-semibold tracking-widest text-gray-400 uppercase">
@@ -359,6 +375,7 @@ function AppLayout({ children }: PropsWithChildren) {
                                             const isActive =
                                                 currentPath ===
                                                 item.route.url();
+
                                             return (
                                                 <button
                                                     key={item.name}
@@ -449,6 +466,7 @@ function AppLayout({ children }: PropsWithChildren) {
                 <div className="flex h-16 items-stretch">
                     {visibleMobileItems.map((item) => {
                         const isActive = currentPath === item.route.url();
+
                         return (
                             <button
                                 key={item.name}
@@ -551,7 +569,11 @@ function AppLayout({ children }: PropsWithChildren) {
                                         overflowMobileItems.filter((item) =>
                                             group.items.includes(item.name),
                                         );
-                                    if (groupItems.length === 0) return null;
+
+                                    if (groupItems.length === 0) {
+return null;
+}
+
                                     return (
                                         <div key={group.label}>
                                             <p className="mb-1 px-1 text-[10px] font-semibold tracking-widest text-gray-400 uppercase">
@@ -562,6 +584,7 @@ function AppLayout({ children }: PropsWithChildren) {
                                                     const isActive =
                                                         currentPath ===
                                                         item.route.url();
+
                                                     return (
                                                         <button
                                                             key={item.name}

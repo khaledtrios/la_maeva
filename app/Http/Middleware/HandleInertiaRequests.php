@@ -35,20 +35,77 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        // Déterminer l'utilisateur authentifié (web ou store guard)
+        $user = null;
+
+        if ($request->user('store')) {
+            // Store Admin - User transformé avec auth_type=EMAIL_PASSWORD
+            $storeUser = $request->user('store');
+            $store = $storeUser->store()->with('entity')->first();
+
+            $user = [
+                'id' => $storeUser->id,
+                'nom' => $storeUser->nom,
+                'role' => 'ADMIN', // Store Admin = ADMIN
+                'entity_id' => $store?->entity_id,
+                'entity' => $store && $store->entity ? [
+                    'id' => $store->entity->id,
+                    'type' => $store->entity->type,
+                    'nom' => $store->entity->nom,
+                ] : null,
+            ];
+        } elseif ($request->user()) {
+            // Utilisateur web interne
+            $user = [
+                'id' => $request->user()->id,
+                'nom' => $request->user()->nom,
+                'role' => $request->user()->role,
+                'entity_id' => $request->user()->entity_id,
+                'entity' => $request->user()->entity ? [
+                    'id' => $request->user()->entity->id,
+                    'type' => $request->user()->entity->type,
+                    'nom' => $request->user()->entity->nom,
+                ] : null,
+            ];
+        }
+
+        // Construire les données storeAuth si Store Admin
+        $storeAuth = null;
+        if ($request->user('store')) {
+            $storeUser = $request->user('store');
+            $store = $storeUser->store;
+
+            if ($store) {
+                $storeAuth = [
+                    'storeUser' => [
+                        'id' => $storeUser->id,
+                        'nom' => $storeUser->nom,
+                        'email' => $storeUser->email,
+                        'role' => $storeUser->role,
+                        'store' => [
+                            'id' => $store->id,
+                            'name' => $store->name,
+                            'status' => $store->status->value,
+                        ],
+                    ],
+                ];
+            }
+        }
+
         return [
             ...parent::share($request),
             'name' => config('app.name'),
             'auth' => [
-                'user' => $request->user() ? [
-                    'id' => $request->user()->id,
-                    'nom' => $request->user()->nom,
-                    'role' => $request->user()->role,
-                    'entity_id' => $request->user()->entity_id,
-                    'entity' => $request->user()->entity ? [
-                        'id' => $request->user()->entity->id,
-                        'type' => $request->user()->entity->type,
-                        'nom' => $request->user()->entity->nom,
-                    ] : null,
+                'user' => $user,
+            ],
+            'storeAuth' => $storeAuth ?? [
+                'storeUser' => null,
+            ],
+            'superAdminAuth' => [
+                'superAdmin' => $request->user('super_admin') ? [
+                    'id' => $request->user('super_admin')->id,
+                    'name' => $request->user('super_admin')->name,
+                    'email' => $request->user('super_admin')->email,
                 ] : null,
             ],
             'flash' => [

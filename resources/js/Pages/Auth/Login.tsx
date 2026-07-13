@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { useForm, usePage } from '@inertiajs/react';
+import { Link, useForm, usePage } from '@inertiajs/react';
 import { login } from '@/routes';
+import { register as storeRegister } from '@/routes/store';
 
 export default function Login() {
     const { errors } = usePage().props as any;
@@ -136,6 +137,18 @@ export default function Login() {
                 {errors.pin && (
                     <div className="login-error">{errors.pin}</div>
                 )}
+
+                <p
+                    style={{
+                        textAlign: 'center',
+                        fontSize: '0.72rem',
+                        color: 'var(--text-3)',
+                        marginTop: '18px',
+                    }}
+                >
+                    Vous êtes une boutique ?{' '}
+                    <Link href={storeRegister.url()}>Inscrivez-vous ici</Link>
+                </p>
             </div>
         </div>
     );

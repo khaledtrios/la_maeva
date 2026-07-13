@@ -15,9 +15,32 @@ class DashboardController extends Controller
 {
     public function index()
     {
-        $user       = Auth::user();
-        $entityId   = $user->entity_id;
-        $entityType = $user->entity->type;
+        // Vérifier si c'est un Store Admin (store guard) ou un utilisateur interne (web guard)
+        $storeAdmin = Auth::guard('store')->user();
+
+        if ($storeAdmin) {
+            // Store Admin - charger l'entité associée au store
+            $store = $storeAdmin->store()->with('entity')->first();
+
+            // Vérifier que le store a une entity_id associée
+            if (!$store || !$store->entity_id) {
+                return Inertia::render('Dashboard', [
+                    'alerts'       => [],
+                    'laboData'     => null,
+                    'boutiqueData' => null,
+                    'factureStats' => [],
+                    'error'        => 'Votre boutique n\'est pas correctement configurée. Contactez l\'administrateur.',
+                ]);
+            }
+
+            $entityId   = $store->entity_id;
+            $entityType = $store->entity->type ?? 'LABO';
+        } else {
+            // Utilisateur interne - utiliser entity_id comme avant
+            $user       = Auth::user();
+            $entityId   = $user->entity_id;
+            $entityType = $user->entity->type;
+        }
 
         // Alertes stock ingrédients (labo)
         $alerts = InventoryService::getAlerts($entityId);
@@ -106,14 +129,24 @@ class DashboardController extends Controller
      */
     public function factureStats(): array
     {
-        $user = Auth::user();
+        // Vérifier si c'est un Store Admin
+        $storeAdmin = Auth::guard('store')->user();
 
-        if ($user->role === 'RESP_BOUTIQUE' || $user->role === 'EMPLOYE_VENTE') {
-            $factures = Facture::where('boulangerie_id', $user->entity_id);
-        } elseif (in_array($user->role, ['RESP_LABO', 'ADMIN'])) {
-            $factures = Facture::where('entity_id', $user->entity_id);
+        if ($storeAdmin) {
+            // Store Admin - utiliser l'entity_id du store
+            $entityId = $storeAdmin->store->entity_id;
+            $factures = Facture::where('entity_id', $entityId);
         } else {
-            return [];
+            // Utilisateur interne
+            $user = Auth::user();
+
+            if ($user->role === 'RESP_BOUTIQUE' || $user->role === 'EMPLOYE_VENTE') {
+                $factures = Facture::where('boulangerie_id', $user->entity_id);
+            } elseif (in_array($user->role, ['RESP_LABO', 'ADMIN'])) {
+                $factures = Facture::where('entity_id', $user->entity_id);
+            } else {
+                return [];
+            }
         }
 
         return [

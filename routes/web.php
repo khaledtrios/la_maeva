@@ -19,6 +19,11 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\StockMovementController;
 use App\Http\Controllers\StockController;
 use App\Http\Controllers\FactureController;
+use App\Http\Controllers\Store\StoreRegistrationController;
+use App\Http\Controllers\Store\StoreAuthController;
+use App\Http\Controllers\Store\StoreDashboardController;
+use App\Http\Controllers\SuperAdmin\SuperAdminAuthController;
+use App\Http\Controllers\SuperAdmin\StoreManagementController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -31,21 +36,52 @@ Route::middleware('guest')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
 });
 
-Route::middleware('auth')->post('/logout', [AuthController::class, 'logout'])->name('logout');
+Route::middleware('auth:web,store')->post('/logout', [AuthController::class, 'logout'])->name('logout');
 
 // Broadcasting : géré via bootstrap/app.php -> withRouting(channels: ...)
+
+// ============================================
+// AUTHENTIFICATION BOUTIQUE (self-service, guard "store")
+// ============================================
+
+Route::middleware('guest:store')->group(function () {
+    Route::get('/register', [StoreRegistrationController::class, 'create'])->name('store.register');
+    Route::post('/register', [StoreRegistrationController::class, 'store'])->name('store.register.submit');
+    Route::get('/store/login', [StoreAuthController::class, 'create'])->name('store.login');
+    Route::post('/store/login', [StoreAuthController::class, 'store'])->name('store.login.submit');
+});
+
+Route::middleware('auth:store')->group(function () {
+    Route::post('/store/logout', [StoreAuthController::class, 'destroy'])->name('store.logout');
+
+    Route::middleware(['store.active', 'store.guard'])->group(function () {
+        Route::get('/store/dashboard', [StoreDashboardController::class, 'index'])->name('store.dashboard');
+
+        // ============================================
+        // STORE CRM ROUTES (/store/*)
+        // ============================================
+
+        Route::get('/store/production', [ProductionController::class, 'index'])->name('store.production');
+        Route::get('/store/products', [ProductController::class, 'index'])->name('store.products');
+        Route::get('/store/stocks', [StockController::class, 'index'])->name('store.stocks');
+        Route::get('/store/inventory', [InventoryController::class, 'index'])->name('store.inventory');
+        Route::get('/store/haccp', [HaccpController::class, 'index'])->name('store.haccp');
+        Route::get('/store/facturation', [FactureController::class, 'index'])->name('store.facturation');
+        Route::get('/store/reporting', [ReportingController::class, 'index'])->name('store.reporting');
+    });
+});
 
 // ============================================
 // DASHBOARD (auth)
 // ============================================
 
-Route::middleware('auth')->get('/', [DashboardController::class, 'index'])->name('dashboard');
+Route::middleware('auth:web,store')->get('/', [DashboardController::class, 'index'])->name('dashboard');
 
 // ============================================
 // PRODUITS / INGRÉDIENTS / CATÉGORIES / RECETTES
 // ============================================
 
-Route::middleware('auth')->prefix('products')->name('products.')->group(function () {
+Route::middleware('auth:web,store')->prefix('products')->name('products.')->group(function () {
     Route::get('/', [ProductController::class, 'index'])->name('index');
     Route::post('/', [ProductController::class, 'store'])->middleware('role:ADMIN,RESP_LABO')->name('store');
     Route::put('/{product}', [ProductController::class, 'update'])->middleware('role:ADMIN,RESP_LABO')->name('update');
@@ -54,13 +90,13 @@ Route::middleware('auth')->prefix('products')->name('products.')->group(function
     Route::put('/{product}/recipe', [ProductController::class, 'updateRecipe'])->middleware('role:ADMIN,RESP_LABO')->name('recipe.update');
 });
 
-Route::middleware('auth')->prefix('categories')->name('categories.')->group(function () {
+Route::middleware('auth:web,store')->prefix('categories')->name('categories.')->group(function () {
     Route::post('/', [CategoryController::class, 'store'])->middleware('role:ADMIN,RESP_LABO')->name('store');
     Route::put('/{category}', [CategoryController::class, 'update'])->middleware('role:ADMIN,RESP_LABO')->name('update');
     Route::delete('/{category}', [CategoryController::class, 'destroy'])->middleware('role:ADMIN,RESP_LABO')->name('destroy');
 });
 
-Route::middleware('auth')->prefix('ingredients')->name('ingredients.')->group(function () {
+Route::middleware('auth:web,store')->prefix('ingredients')->name('ingredients.')->group(function () {
     Route::post('/', [IngredientController::class, 'store'])->middleware('role:ADMIN,RESP_LABO')->name('store');
     Route::put('/{ingredient}', [IngredientController::class, 'update'])->middleware('role:ADMIN,RESP_LABO')->name('update');
     Route::delete('/{ingredient}', [IngredientController::class, 'destroy'])->middleware('role:ADMIN,RESP_LABO')->name('destroy');
@@ -70,7 +106,7 @@ Route::middleware('auth')->prefix('ingredients')->name('ingredients.')->group(fu
 // STOCKS (INVENTORY)
 // ============================================
 
-Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(function () {
+Route::middleware('auth:web,store')->prefix('inventory')->name('inventory.')->group(function () {
     Route::get('/', [InventoryController::class, 'index'])->name('index');
     Route::get('/lots', [InventoryController::class, 'lotsIndex'])->name('lots.index');
     Route::put('/adjust-batch', [InventoryController::class, 'adjustBatch'])->middleware('role:ADMIN,RESP_LABO')->name('adjust-batch');
@@ -92,7 +128,7 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
 // STOCK BOULANGERIE (produits finis)
 // ============================================
 
-Route::middleware('auth')->prefix('stock')->name('stock.')->group(function () {
+Route::middleware('auth:web,store')->prefix('stock')->name('stock.')->group(function () {
     Route::get('/', [StockController::class, 'index'])->name('index');
     Route::post('/adjust', [StockController::class, 'adjust'])->middleware('role:ADMIN,RESP_BOUTIQUE')->name('adjust');
     Route::get('/movements', [StockController::class, 'movements'])->name('movements');
@@ -102,7 +138,7 @@ Route::middleware('auth')->prefix('stock')->name('stock.')->group(function () {
 // PRODUCTION
 // ============================================
 
-Route::middleware('auth')->prefix('production')->name('production.')->group(function () {
+Route::middleware('auth:web,store')->prefix('production')->name('production.')->group(function () {
     Route::get('/', [ProductionController::class, 'index'])->name('index');
     Route::post('/', [ProductionController::class, 'store'])->middleware('role:ADMIN,RESP_LABO,EMPLOYE_LABO')->name('store');
     Route::put('/{production}', [ProductionController::class, 'update'])->middleware('role:ADMIN,RESP_LABO')->name('update');
@@ -115,7 +151,7 @@ Route::middleware('auth')->prefix('production')->name('production.')->group(func
 // EXPÉDITIONS
 // ============================================
 
-Route::middleware('auth')->prefix('expeditions')->name('expeditions.')->group(function () {
+Route::middleware('auth:web,store')->prefix('expeditions')->name('expeditions.')->group(function () {
     Route::get('/', [ExpeditionController::class, 'index'])->name('index');
     Route::get('/{expedition}', [ExpeditionController::class, 'show'])->name('show');
     Route::post('/', [ExpeditionController::class, 'store'])->middleware('role:ADMIN,RESP_LABO')->name('store');
@@ -126,7 +162,7 @@ Route::middleware('auth')->prefix('expeditions')->name('expeditions.')->group(fu
 // RÉCEPTIONS
 // ============================================
 
-Route::middleware('auth')->prefix('receptions')->name('receptions.')->group(function () {
+Route::middleware('auth:web,store')->prefix('receptions')->name('receptions.')->group(function () {
     Route::get('/', [ReceptionController::class, 'index'])->name('index');
     Route::post('/{reception}/confirm', [ReceptionController::class, 'confirm'])->middleware('role:ADMIN,RESP_BOUTIQUE,EMPLOYE_VENTE')->name('confirm');
 });
@@ -135,7 +171,7 @@ Route::middleware('auth')->prefix('receptions')->name('receptions.')->group(func
 // COMMANDES URGENTES (F4 — Réassort jour même)
 // ============================================
 
-Route::middleware('auth')->prefix('commandes-urgentes')->name('commandes-urgentes.')->group(function () {
+Route::middleware('auth:web,store')->prefix('commandes-urgentes')->name('commandes-urgentes.')->group(function () {
     // Index : listing (filtrage automatique par rôle dans le contrôleur)
     Route::get('/', [CommandeUrgenteController::class, 'index'])->name('index');
 
@@ -173,7 +209,7 @@ Route::middleware('auth')->prefix('commandes-urgentes')->name('commandes-urgente
 // RETOURS PRODUITS
 // ============================================
 
-Route::middleware('auth')->prefix('returns')->name('returns.')->group(function () {
+Route::middleware('auth:web,store')->prefix('returns')->name('returns.')->group(function () {
     // Index : tous les rôles concernés (filtrage interne)
     Route::get('/', [ReturnController::class, 'index'])->name('index');
 
@@ -225,7 +261,7 @@ Route::middleware('auth')->prefix('returns')->name('returns.')->group(function (
 // VENTES & INVENDUS
 // ============================================
 
-Route::middleware('auth')->prefix('sales')->name('sales.')->group(function () {
+Route::middleware('auth:web,store')->prefix('sales')->name('sales.')->group(function () {
     Route::get('/', [SaleController::class, 'index'])->name('index');
     Route::post('/', [SaleController::class, 'store'])->middleware('role:ADMIN,RESP_BOUTIQUE,EMPLOYE_VENTE')->name('store');
 });
@@ -234,7 +270,7 @@ Route::middleware('auth')->prefix('sales')->name('sales.')->group(function () {
 // HACCP
 // ============================================
 
-Route::middleware('auth')->prefix('haccp')->name('haccp.')->group(function () {
+Route::middleware('auth:web,store')->prefix('haccp')->name('haccp.')->group(function () {
     Route::get('/', [HaccpController::class, 'index'])->name('index');
     Route::get('/temperatures', [HaccpController::class, 'temperatures'])->name('temperatures');
     Route::post('/temperatures', [HaccpController::class, 'storeTemperature'])->name('temperatures.store');
@@ -249,7 +285,7 @@ Route::middleware('auth')->prefix('haccp')->name('haccp.')->group(function () {
 // NON-CONFORMITÉS
 // ============================================
 
-Route::middleware('auth')->prefix('nonconformites')->name('nonconformites.')->group(function () {
+Route::middleware('auth:web,store')->prefix('nonconformites')->name('nonconformites.')->group(function () {
     Route::get('/', [NonConformiteController::class, 'index'])->name('index');
     Route::post('/', [NonConformiteController::class, 'store'])->name('store');
     Route::put('/{nc}', [NonConformiteController::class, 'update'])->middleware('role:ADMIN,RESP_LABO,RESP_BOUTIQUE')->name('update');
@@ -294,11 +330,33 @@ Route::middleware(['auth', 'role:ADMIN'])->prefix('admin')->name('admin.')->grou
 });
 
 // ============================================
+// SUPER ADMIN (guard "super_admin", indépendant des tables users/store_users)
+// ============================================
+
+Route::middleware('guest:super_admin')->group(function () {
+    Route::get('/super-admin/login', [SuperAdminAuthController::class, 'create'])->name('superadmin.login');
+    Route::post('/super-admin/login', [SuperAdminAuthController::class, 'store'])->name('superadmin.login.submit');
+});
+
+Route::middleware('auth:super_admin')->group(function () {
+    Route::post('/super-admin/logout', [SuperAdminAuthController::class, 'destroy'])->name('superadmin.logout');
+
+    // Gestion des boutiques (validation des inscriptions, suspension/réactivation)
+    Route::prefix('super-admin/stores')->name('superadmin.stores.')->group(function () {
+        Route::get('/', [StoreManagementController::class, 'index'])->name('index');
+        Route::post('/{store}/approve', [StoreManagementController::class, 'approve'])->name('approve');
+        Route::post('/{store}/reject', [StoreManagementController::class, 'reject'])->name('reject');
+        Route::post('/{store}/suspend', [StoreManagementController::class, 'suspend'])->name('suspend');
+        Route::post('/{store}/reactivate', [StoreManagementController::class, 'reactivate'])->name('reactivate');
+    });
+});
+
+// ============================================
 // FACTURATION
 // ============================================
 
 // Génération/gestions factures (LABO + consultation boutiques)
-Route::middleware('auth')->prefix('factures')->name('factures.')->group(function () {
+Route::middleware('auth:web,store')->prefix('factures')->name('factures.')->group(function () {
     // Index : filtrage automatique par entité dans le contrôleur
     Route::get('/', [FactureController::class, 'index'])->name('index');
 

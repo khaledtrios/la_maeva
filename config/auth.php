@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\User;
+use App\Models\SuperAdmin;
 
 return [
 
@@ -42,6 +43,16 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        'store' => [
+            'driver' => 'session',
+            'provider' => 'store_users',
+        ],
+
+        'super_admin' => [
+            'driver' => 'session',
+            'provider' => 'super_admins',
+        ],
     ],
 
     /*
@@ -71,6 +82,16 @@ return [
         //     'driver' => 'database',
         //     'table' => 'users',
         // ],
+
+        'store_users' => [
+            'driver' => 'eloquent',
+            'model' => User::class,
+        ],
+
+        'super_admins' => [
+            'driver' => 'eloquent',
+            'model' => SuperAdmin::class,
+        ],
     ],
 
     /*

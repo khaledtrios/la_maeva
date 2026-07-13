@@ -228,25 +228,25 @@ export default function Dashboard() {
         : [];
 
 // Ajouter stats facturation pour labo
-const facturationCards = factureStats && (user?.role === 'ADMIN' || user?.role === 'RESP_LABO')
+const facturationCards = factureStats && factureStats.montant_en_cours !== undefined && (user?.role === 'ADMIN' || user?.role === 'RESP_LABO')
     ? [
         {
             label: 'Factures brouillon',
-            value: factureStats.factures_brouillon,
+            value: factureStats.factures_brouillon ?? 0,
             color: 'var(--warning)',
             bg: 'var(--warning-bg)',
             Icon: Wallet,
         },
         {
             label: 'Factures émises (mois)',
-            value: factureStats.factures_emises_mois,
+            value: factureStats.factures_emises_mois ?? 0,
             color: 'var(--info)',
             bg: 'var(--info-bg)',
             Icon: BarChart2,
         },
         {
             label: 'Montant en cours',
-            value: factureStats.montant_en_cours.toFixed(2) + ' €',
+            value: (factureStats.montant_en_cours ?? 0).toFixed(2) + ' €',
             color: 'var(--success)',
             bg: 'var(--success-bg)',
             Icon: DollarSign,

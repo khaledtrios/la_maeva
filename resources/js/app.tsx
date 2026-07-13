@@ -3,7 +3,14 @@ import { createRoot } from 'react-dom/client'
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers'
 import AppLayout from '@/Components/Layout/AppLayout'
 
-const NO_LAYOUT_PAGES = ['Auth/Login']
+const NO_LAYOUT_PAGES = [
+  'Auth/Login',
+  'Store/Register',
+  'Store/Login',
+  'Store/Dashboard',
+  'SuperAdmin/Login',
+  'SuperAdmin/Stores/Index',
+]
 
 createInertiaApp({
   resolve: async (name) => {
