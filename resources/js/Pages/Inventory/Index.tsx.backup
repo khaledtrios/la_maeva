@@ -1,0 +1,1429 @@
+import { useState, useEffect, useMemo } from 'react';
+import { Link, router } from '@inertiajs/react';
+import { useAuth } from '@/hooks/useAuth';
+import inventory from '@/routes/inventory';
+import {
+    AlertCircle,
+    FlaskConical,
+    CheckCircle,
+    Plus,
+    Package,
+    TrendingUp,
+    AlertTriangle,
+    XCircle,
+    Calendar,
+    Layers,
+    FileText,
+    Save,
+    RefreshCw,
+} from 'lucide-react';
+import type { InventoryItem, Ingredient } from '@/types';
+import InventoryIngredientModal from '@/Components/Forms/InventoryIngredientModal';
+import StockEntryModal from '@/Components/Forms/StockEntryModal';
+import { Badge } from '@/Components/UI/Badge';
+
+interface InventoryIndexProps {
+    items: (InventoryItem & { ingredient: Ingredient })[];
+    alerts: (InventoryItem & { ingredient: Ingredient })[];
+    high_stock_alerts: (InventoryItem & { ingredient: Ingredient })[];
+    ingredients: Ingredient[];
+    entity: { id: number; type: string };
+    expired_lots: any[]; // TODO: typer avec StockBalance
+    expiring_soon_lots: any[];
+    has_dlc_alerts: boolean;
+}
+
+export default function InventoryIndex({
+    items,
+    alerts,
+    high_stock_alerts,
+    ingredients,
+    entity,
+    expired_lots,
+    expiring_soon_lots,
+    has_dlc_alerts,
+}: InventoryIndexProps) {
+    const { hasRole } = useAuth();
+
+    // ── Modals ──
+    const [ingredientModalOpen, setIngredientModalOpen] = useState(false);
+    const [stockEntryModalOpen, setStockEntryModalOpen] = useState(false);
+
+    // ── Adjustments state (inline editing) ──
+    // Map: ingredient_id -> { adjustment: number, isDirty: boolean }
+    const [adjustmentsMap, setAdjustmentsMap] = useState<
+        Record<number, { adjustment: number; isDirty: boolean }>
+    >({});
+
+    // Initialize adjustments map from items on mount/items change
+    useEffect(() => {
+        const initialMap: Record<number, { adjustment: number; isDirty: boolean }> = {};
+        items.forEach((item) => {
+            initialMap[item.ingredient_id] = { adjustment: 0, isDirty: false };
+        });
+        setAdjustmentsMap(initialMap);
+    }, [items]);
+
+    // ── Stats ──
+    const totalItems = items.length;
+    const lowStockCount = items.filter((i) => i.is_low_stock).length;
+    const highStockCount = items.filter((i) => i.is_high_stock).length;
+    const healthyCount = totalItems - lowStockCount - highStockCount;
+
+    // Count dirty rows
+    const dirtyCount = useMemo(
+        () => Object.values(adjustmentsMap).filter((a) => a.isDirty).length,
+        [adjustmentsMap],
+    );
+
+    // ── Open/close modals ──
+    const openIngredientModal = () => setIngredientModalOpen(true);
+    const closeIngredientModal = () => setIngredientModalOpen(false);
+    const openStockEntryModal = () => setStockEntryModalOpen(true);
+    const closeStockEntryModal = () => setStockEntryModalOpen(false);
+
+    // ── Adjustment handlers ──
+    const handleAdjustmentChange = (ingredientId: number, value: number) => {
+        setAdjustmentsMap((prev) => ({
+            ...prev,
+            [ingredientId]: {
+                adjustment: value,
+                isDirty: value !== 0,
+            },
+        }));
+    };
+
+    const resetAdjustment = (ingredientId: number) => {
+        setAdjustmentsMap((prev) => ({
+            ...prev,
+            [ingredientId]: { adjustment: 0, isDirty: false },
+        }));
+    };
+
+    // Save a single adjustment line
+    const saveAdjustment = async (ingredientId: number) => {
+        const adj = adjustmentsMap[ingredientId];
+        if (!adj.isDirty || adj.adjustment === 0) return;
+
+        try {
+            await router.put(
+                inventory.adjustBatch.url(),
+                {
+                    adjustments: [
+                        {
+                            ingredient_id: ingredientId,
+                            adjustment: adj.adjustment,
+                        },
+                    ],
+                },
+                {
+                    preserveState: true,
+                    preserveScroll: true,
+                    onSuccess: () => {
+                        resetAdjustment(ingredientId);
+                    },
+                },
+            );
+        } catch (error) {
+            console.error('Erreur sauvegarde ajustement:', error);
+            // Error handled by Inertia (will be in page props.errors)
+        }
+    };
+
+    // Save all dirty adjustments
+    const saveAllAdjustments = async () => {
+        const dirtyAdjustments = Object.entries(adjustmentsMap)
+            .filter(([, adj]) => adj.isDirty && adj.adjustment !== 0)
+            .map(([ingredientId, adj]) => ({
+                ingredient_id: Number(ingredientId),
+                adjustment: adj.adjustment,
+            }));
+
+        if (dirtyAdjustments.length === 0) return;
+
+        try {
+            await router.put(
+                inventory.adjustBatch.url(),
+                {
+                    adjustments: dirtyAdjustments,
+                },
+                {
+                    preserveState: true,
+                    preserveScroll: true,
+                    onSuccess: () => {
+                        // Reset all adjustments
+                        setAdjustmentsMap((prev) => {
+                            const newMap = { ...prev };
+                            Object.keys(newMap).forEach((key) => {
+                                newMap[Number(key)] = { ...newMap[Number(key)], isDirty: false, adjustment: 0 };
+                            });
+                            return newMap;
+                        });
+                    },
+                },
+            );
+        } catch (error) {
+            console.error('Erreur sauvegarde batch:', error);
+        }
+    };
+
+    // Helper: get adjustment for an ingredient
+    const getAdjustment = (ingredientId: number): number => {
+        return adjustmentsMap[ingredientId]?.adjustment ?? 0;
+    };
+
+    // Helper: is row dirty?
+    const isDirty = (ingredientId: number): boolean => {
+        return adjustmentsMap[ingredientId]?.isDirty ?? false;
+    };
+
+    // Helper: calculate new stock
+    const getNewStock = (item: InventoryItem): number => {
+        const adj = getAdjustment(item.ingredient_id);
+        return Number(item.quantite) + adj;
+    };
+
+    // Helper: get adjustment badge class
+    const getAdjustmentBadgeClass = (adj: number): string => {
+        if (adj > 0) return 'badge--success';
+        if (adj < 0) return 'badge--danger';
+        return 'badge--muted';
+    };
+
+    // Helper: get adjustment sign display
+    const getAdjustmentSign = (adj: number): string => {
+        if (adj === 0) return '';
+        return adj > 0 ? `+${adj.toFixed(2)}` : adj.toFixed(2);
+    };
+
+    return (
+        <div className="inventory-page">
+            {/* ── PAGE HEADER ── */}
+            <div className="page-header">
+                <div>
+                    <h1 className="page-title">Gestion des Stocks</h1>
+                    <p className="page-subtitle">
+                        {totalItems} ingrédient{totalItems > 1 ? 's' : ''}
+                    </p>
+                </div>
+                <div className="header-actions">
+                    <Link
+                        href={inventory.lots.index()}
+                        className="btn-secondary"
+                    >
+                        <Layers size={16} strokeWidth={1.5} />
+                        <span>Lots (FIFO)</span>
+                    </Link>
+                    <Link href="/inventory/movements" className="btn-secondary">
+                        <FileText size={16} strokeWidth={1.5} />
+                        <span>Mouvements</span>
+                    </Link>
+                    {hasRole('ADMIN', 'RESP_LABO') && (
+                        <>
+                            <button
+                                className="btn-secondary"
+                                onClick={openStockEntryModal}
+                                title="Ajouter une entrée de stock"
+                            >
+                                <Plus size={16} strokeWidth={1.5} />
+                                <span>Entrée stock</span>
+                            </button>
+                            <button
+                                className="btn-primary"
+                                onClick={openIngredientModal}
+                            >
+                                <Plus size={16} strokeWidth={1.5} />
+                                <span>Nouvel ingrédient</span>
+                            </button>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {/* ── STATS CARDS ── */}
+            <div className="stats-grid">
+                <div className="stat-card">
+                    <div className="stat-icon stat-icon--orange">
+                        <Package size={22} strokeWidth={1.5} />
+                    </div>
+                    <div className="stat-content">
+                        <div className="stat-label">Total ingrédients</div>
+                        <div className="stat-value">{totalItems}</div>
+                    </div>
+                </div>
+                <div className="stat-card">
+                    <div className="stat-icon stat-icon--success">
+                        <CheckCircle size={22} strokeWidth={1.5} />
+                    </div>
+                    <div className="stat-content">
+                        <div className="stat-label">Stock sain</div>
+                        <div className="stat-value stat-value--success">
+                            {healthyCount}
+                        </div>
+                    </div>
+                </div>
+                <div className="stat-card">
+                    <div className="stat-icon stat-icon--danger">
+                        <AlertTriangle size={22} strokeWidth={1.5} />
+                    </div>
+                    <div className="stat-content">
+                        <div className="stat-label">Stock bas</div>
+                        <div className="stat-value stat-value--danger">
+                            {lowStockCount}
+                        </div>
+                    </div>
+                </div>
+                <div className="stat-card">
+                    <div className="stat-icon stat-icon--warning">
+                        <TrendingUp size={22} strokeWidth={1.5} />
+                    </div>
+                    <div className="stat-content">
+                        <div className="stat-label">Sur-stock</div>
+                        <div className="stat-value stat-value--warning">
+                            {highStockCount}
+                        </div>
+                    </div>
+                </div>
+                <div className="stat-card">
+                    <div className="stat-icon stat-icon--orange">
+                        <TrendingUp size={22} strokeWidth={1.5} />
+                    </div>
+                    <div className="stat-content">
+                        <div className="stat-label">Valeur totale</div>
+                        <div className="stat-value">
+                            {items
+                                .reduce((sum, item) => {
+                                    const prix =
+                                        Number(item.ingredient.prix_unitaire) ||
+                                        0;
+                                    return sum + prix * Number(item.quantite);
+                                }, 0)
+                                .toFixed(2)}{' '}
+                            €
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* ── ALERTES STOCK BAS ── */}
+            {alerts.length > 0 && (
+                <div className="alert alert-danger">
+                    <AlertCircle size={18} strokeWidth={2} />
+                    <span className="alert-text">
+                        <strong>
+                            {alerts.length} ingrédient
+                            {alerts.length > 1 ? 's' : ''} en stock bas :
+                        </strong>{' '}
+                        {alerts.map((a) => a.ingredient.nom).join(', ')}
+                    </span>
+                </div>
+            )}
+
+            {/* ── ALERTES STOCK TROP ÉLEVÉ ── */}
+            {high_stock_alerts.length > 0 && (
+                <div className="alert alert-warning">
+                    <TrendingUp size={18} strokeWidth={2} />
+                    <span className="alert-text">
+                        <strong>
+                            {high_stock_alerts.length} ingrédient
+                            {high_stock_alerts.length > 1 ? 's' : ''} en
+                            sur-stock :
+                        </strong>{' '}
+                        {high_stock_alerts
+                            .map((a) => a.ingredient.nom)
+                            .join(', ')}
+                    </span>
+                </div>
+            )}
+
+            {/* ── ALERTES DLC (LOTS EXPIRÉS / BIENTÔT EXPIRÉS) ── */}
+            {has_dlc_alerts && (
+                <div className="mt-4 space-y-3">
+                    {/* Lots expirés — CRITIQUE */}
+                    {expired_lots.length > 0 && (
+                        <div className="alert alert-danger">
+                            <XCircle size={18} strokeWidth={2} />
+                            <span className="alert-text">
+                                <strong>
+                                    {expired_lots.length} lot(s) expiré(s) :
+                                </strong>{' '}
+                                {expired_lots
+                                    .slice(0, 3)
+                                    .map(
+                                        (l: any) =>
+                                            `${l.ingredient.nom} (${l.lot_number || 'N/A'})`,
+                                    )
+                                    .join(', ')}
+                                {expired_lots.length > 3 &&
+                                    ` +${expired_lots.length - 3} autres`}
+                            </span>
+                            <Link
+                                href={inventory.lots.index({
+                                    query: { dlc_status: 'expired' },
+                                })}
+                                className="btn-ghost ml-auto"
+                            >
+                                Voir les lots
+                            </Link>
+                        </div>
+                    )}
+
+                    {/* Lots bientôt expirés — WARNING */}
+                    {expiring_soon_lots.length > 0 && (
+                        <div className="alert alert-warning">
+                            <Calendar size={18} strokeWidth={2} />
+                            <span className="alert-text">
+                                <strong>
+                                    {expiring_soon_lots.length} lot(s)
+                                    expire(nt) sous 3j :
+                                </strong>{' '}
+                                {expiring_soon_lots
+                                    .slice(0, 3)
+                                    .map(
+                                        (l: any) =>
+                                            `${l.ingredient.nom} (DLC: ${l.dlc})`,
+                                    )
+                                    .join(', ')}
+                                {expiring_soon_lots.length > 3 &&
+                                    ` +${expiring_soon_lots.length - 3} autres`}
+                            </span>
+                            <Link
+                                href={inventory.lots.index({
+                                    query: { dlc_status: 'expiring_soon' },
+                                })}
+                                className="btn-ghost ml-auto"
+                            >
+                                Voir les lots
+                            </Link>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── LISTE DES STOCKS ── */}
+            <div className="table-card">
+                <div className="table-header">
+                    <div className="table-title">
+                        <div className="table-dot" />
+                        <span>Inventaire</span>
+                    </div>
+                    <div className="table-actions">
+                        {dirtyCount > 0 && hasRole('ADMIN', 'RESP_LABO') && (
+                            <button
+                                onClick={saveAllAdjustments}
+                                className="btn-primary"
+                                title={`Sauver ${dirtyCount} modification${dirtyCount > 1 ? 's' : ''}`}
+                            >
+                                <Save size={14} strokeWidth={1.5} />
+                                <span>
+                                    Sauver tout ({dirtyCount})
+                                </span>
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                {items.length === 0 ? (
+                    <div className="empty-state-card">
+                        <FlaskConical size={48} strokeWidth={1} />
+                        <div className="empty-state-text">
+                            Aucun stock enregistré pour cette entité
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        {/* Mobile cards */}
+                        <div className="mobile-list">
+                            {items.map((item, i) => {
+                                const adj = getAdjustment(item.ingredient_id);
+                                const dirty = isDirty(item.ingredient_id);
+                                const newStock = getNewStock(item);
+                                return (
+                                    <div
+                                        key={item.id}
+                                        className={`mobile-row ${dirty ? 'row-dirty' : ''}`}
+                                        style={{ animationDelay: `${i * 0.05}s` }}
+                                    >
+                                        <div className="mobile-row-top">
+                                            <span className="mobile-name">
+                                                {item.ingredient.nom}
+                                            </span>
+                                            {item.is_low_stock && (
+                                                <span className="status-badge status-badge--danger">
+                                                    Alerte
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="mobile-row-meta">
+                                            <span className="meta-text">
+                                                {item.ingredient.unite || 'unité'}
+                                            </span>
+                                            {item.ingredient.prix_unitaire && (
+                                                <span className="meta-text">
+                                                    {Number(
+                                                        item.ingredient
+                                                            .prix_unitaire,
+                                                    ).toFixed(2)}{' '}
+                                                    € / unité
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="mobile-stats">
+                                            <div className="mobile-stat">
+                                                <span className="mobile-stat-label">
+                                                    Valide
+                                                </span>
+                                                <span className="mobile-stat-value text-success">
+                                                    {Number(
+                                                        item.valid_quantity || 0,
+                                                    ).toFixed(2)}
+                                                </span>
+                                            </div>
+                                            <div className="mobile-stat-divider" />
+                                            <div className="mobile-stat">
+                                                <span className="mobile-stat-label">
+                                                    Expiré
+                                                </span>
+                                                <span className="mobile-stat-value text-danger">
+                                                    {Number(
+                                                        item.expired_quantity || 0,
+                                                    ).toFixed(2)}
+                                                </span>
+                                            </div>
+                                            <div className="mobile-stat-divider" />
+                                            <div className="mobile-stat">
+                                                <span className="mobile-stat-label">
+                                                    Total
+                                                </span>
+                                                <span
+                                                    className={`mobile-stat-value ${item.is_low_stock ? 'text-danger' : item.is_high_stock ? 'text-warning' : 'text-orange'}`}
+                                                >
+                                                    {Number(item.quantite).toFixed(2)}
+                                                </span>
+                                            </div>
+                                            <div className="mobile-stat-divider" />
+                                            <div className="mobile-stat">
+                                                <span className="mobile-stat-label">
+                                                    Seuil min
+                                                </span>
+                                                <span className="mobile-stat-value text-muted">
+                                                    {item.seuil_minimum !== null
+                                                        ? Number(
+                                                              item.seuil_minimum,
+                                                          ).toFixed(2)
+                                                        : '—'}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Ajustement & Nouveau stock */}
+                                        <div className="mobile-adjust-section">
+                                            <div className="mobile-adjust-row">
+                                                <label>Ajustement</label>
+                                                <div className="mobile-input-with-badge">
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        value={
+                                                            adj === 0
+                                                                ? ''
+                                                                : adj
+                                                        }
+                                                        onChange={(e) =>
+                                                            handleAdjustmentChange(
+                                                                item.ingredient_id,
+                                                                parseFloat(
+                                                                    e.target.value ||
+                                                                        0,
+                                                                ),
+                                                            )
+                                                        }
+                                                        className={`form-input form-input--sm ${
+                                                            adj > 0
+                                                                ? 'text-success'
+                                                                : adj < 0
+                                                                ? 'text-danger'
+                                                                : ''
+                                                        }`}
+                                                        placeholder="0"
+                                                    />
+                                                    {adj !== 0 && (
+                                                        <span
+                                                            className={`adjust-badge ${getAdjustmentBadgeClass(
+                                                                adj,
+                                                            )}`}
+                                                        >
+                                                            {getAdjustmentSign(adj)}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="mobile-new-stock">
+                                                <span className="new-stock-label">
+                                                    Nouveau stock:
+                                                </span>
+                                                <span
+                                                    className={`new-stock-value ${dirty ? 'text-orange' : ''}`}
+                                                >
+                                                    {newStock.toFixed(2)}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Seuil max + Actions */}
+                                        <div className="mobile-row-actions">
+                                            <div className="mobile-thresholds">
+                                                <div className="threshold-item">
+                                                    <span className="threshold-label">
+                                                        Seuil min.
+                                                    </span>
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        min="0"
+                                                        value={
+                                                            item.seuil_minimum !==
+                                                            null
+                                                                ? item.seuil_minimum
+                                                                : ''
+                                                        }
+                                                        onChange={async (e) => {
+                                                            const val = e.target.value;
+                                                            // Update threshold via existing endpoint
+                                                            await router.put(
+                                                                inventory.update.url(
+                                                                    item.ingredient.id,
+                                                                ),
+                                                                {
+                                                                    seuil_minimum:
+                                                                        val === ''
+                                                                            ? null
+                                                                            : parseFloat(
+                                                                          val,
+                                                                        ),
+                                                                },
+                                                                {
+                                                                    preserveState: true,
+                                                                },
+                                                            );
+                                                        }}
+                                                        className="form-input form-input--xs"
+                                                    />
+                                                </div>
+                                                <div className="threshold-item">
+                                                    <span className="threshold-label">
+                                                        Stock max
+                                                    </span>
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        min="0"
+                                                        value={
+                                                            item.stock_max !== null
+                                                                ? item.stock_max
+                                                                : ''
+                                                        }
+                                                        onChange={async (e) => {
+                                                            const val = e.target.value;
+                                                            await router.put(
+                                                                inventory.update.url(
+                                                                    item.ingredient.id,
+                                                                ),
+                                                                {
+                                                                    stock_max:
+                                                                        val === ''
+                                                                            ? null
+                                                                            : parseFloat(
+                                                                          val,
+                                                                        ),
+                                                                },
+                                                                {
+                                                                    preserveState: true,
+                                                                },
+                                                            );
+                                                        }}
+                                                        className="form-input form-input--xs"
+                                                    />
+                                                </div>
+                                            </div>
+                                            {hasRole('ADMIN', 'RESP_LABO') && (
+                                                <div className="mobile-action-buttons">
+                                                    {dirty && (
+                                                        <button
+                                                            onClick={() =>
+                                                                saveAdjustment(
+                                                                    item.ingredient_id,
+                                                                )
+                                                            }
+                                                            className="btn-save"
+                                                            title="Sauver cet ajustement"
+                                                        >
+                                                            <Save size={14} strokeWidth={1.5} />
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={() =>
+                                                            resetAdjustment(
+                                                                item.ingredient_id,
+                                                            )
+                                                        }
+                                                        className="btn-reset"
+                                                        title="Réinitialiser"
+                                                    >
+                                                        <RefreshCw size={14} strokeWidth={1.5} />
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Desktop table */}
+                        <div className="table-wrapper">
+                            <table className="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Ingrédient</th>
+                                        <th>Unité</th>
+                                        <th className="text-right">
+                                            Prix unit.
+                                        </th>
+                                        <th className="text-right">Valide</th>
+                                        <th className="text-right">Expiré</th>
+                                        <th className="text-right">Total</th>
+                                        <th className="text-center">
+                                            Ajustement
+                                        </th>
+                                        <th className="text-right">
+                                            Nouveau stock
+                                        </th>
+                                        <th className="text-right">
+                                            Seuil min.
+                                        </th>
+                                        <th className="text-right">
+                                            Stock max
+                                        </th>
+                                        <th className="text-right">Statut</th>
+                                        {hasRole('ADMIN', 'RESP_LABO') && (
+                                            <th className="text-right">
+                                                Actions
+                                            </th>
+                                        )}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {items.map((item, i) => {
+                                        const isLow = item.is_low_stock;
+                                        const isHigh = item.is_high_stock;
+                                        const dirty = isDirty(item.ingredient_id);
+                                        const adj = getAdjustment(item.ingredient_id);
+                                        const newStock = getNewStock(item);
+                                        const rowClass = isLow
+                                            ? 'row-warning row-warning--low'
+                                            : isHigh
+                                              ? 'row-warning row-warning--high'
+                                              : dirty
+                                                ? 'row-dirty'
+                                                : '';
+                                        return (
+                                            <tr
+                                                key={item.id}
+                                                className={rowClass}
+                                                style={{
+                                                    animationDelay: `${i * 0.04}s`,
+                                                }}
+                                            >
+                                                <td>
+                                                    <span className="product-name">
+                                                        {item.ingredient.nom}
+                                                    </span>
+                                                </td>
+                                                <td className="text-muted">
+                                                    {item.ingredient.unite ||
+                                                        '-'}
+                                                </td>
+                                                <td className="text-success text-right">
+                                                    {Number(
+                                                        item.ingredient
+                                                            .prix_unitaire || 0,
+                                                    ).toFixed(2)}{' '}
+                                                    €
+                                                </td>
+                                                <td className="text-success text-right font-semibold">
+                                                    {Number(
+                                                        item.valid_quantity || 0,
+                                                    ).toFixed(2)}
+                                                </td>
+                                                <td className="text-danger text-right font-semibold">
+                                                    {Number(
+                                                        item.expired_quantity || 0,
+                                                    ).toFixed(2)}
+                                                </td>
+                                                <td
+                                                    className={`text-right font-semibold ${isLow ? 'text-danger' : isHigh ? 'text-warning' : 'text-orange'}`}
+                                                >
+                                                    {Number(
+                                                        item.quantite,
+                                                    ).toFixed(2)}
+                                                </td>
+                                                <td className="text-center">
+                                                    <div className="adjust-cell">
+                                                        <input
+                                                            type="number"
+                                                            step="0.01"
+                                                            className={`form-input-inline ${
+                                                                adj > 0
+                                                                    ? 'text-success'
+                                                                    : adj < 0
+                                                                    ? 'text-danger'
+                                                                    : ''
+                                                            }`}
+                                                            value={
+                                                                adj === 0
+                                                                    ? ''
+                                                                    : adj
+                                                            }
+                                                            onChange={(e) =>
+                                                                handleAdjustmentChange(
+                                                                    item.ingredient_id,
+                                                                    parseFloat(
+                                                                        e.target.value ||
+                                                                            0,
+                                                                    ),
+                                                                )
+                                                            }
+                                                            placeholder="0"
+                                                        />
+                                                        {adj !== 0 && (
+                                                            <span
+                                                                className={`adjust-badge-small ${getAdjustmentBadgeClass(
+                                                                    adj,
+                                                                )}`}
+                                                            >
+                                                                {getAdjustmentSign(adj)}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td className="text-right">
+                                                    <span
+                                                        className={`new-stock-value ${dirty ? 'text-orange font-bold' : ''}`}
+                                                    >
+                                                        {newStock.toFixed(2)}
+                                                    </span>
+                                                </td>
+                                                <td className="text-right">
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        min="0"
+                                                        className="form-input-inline form-input--sm"
+                                                        value={
+                                                            item.seuil_minimum !==
+                                                            null
+                                                                ? item.seuil_minimum
+                                                                : ''
+                                                        }
+                                                        onChange={async (e) => {
+                                                            const val = e.target.value;
+                                                            await router.put(
+                                                                inventory.update.url(
+                                                                    item.ingredient.id,
+                                                                ),
+                                                                {
+                                                                    seuil_minimum:
+                                                                        val === ''
+                                                                            ? null
+                                                                            : parseFloat(
+                                                                          val,
+                                                                        ),
+                                                                },
+                                                                {
+                                                                    preserveState: true,
+                                                                },
+                                                            );
+                                                        }}
+                                                    />
+                                                </td>
+                                                <td className="text-right">
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        min="0"
+                                                        className="form-input-inline form-input--sm"
+                                                        value={
+                                                            item.stock_max !== null
+                                                                ? item.stock_max
+                                                                : ''
+                                                        }
+                                                        onChange={async (e) => {
+                                                            const val = e.target.value;
+                                                            await router.put(
+                                                                inventory.update.url(
+                                                                    item.ingredient.id,
+                                                                ),
+                                                                {
+                                                                    stock_max:
+                                                                        val === ''
+                                                                            ? null
+                                                                            : parseFloat(
+                                                                          val,
+                                                                        ),
+                                                                },
+                                                                {
+                                                                    preserveState: true,
+                                                                },
+                                                            );
+                                                        }}
+                                                    />
+                                                </td>
+                                                <td className="text-right">
+                                                    <span
+                                                        className={`status-badge ${isLow ? 'status-badge--danger' : isHigh ? 'status-badge--warning' : 'status-badge--success'}`}
+                                                    >
+                                                        {isLow
+                                                            ? 'Bas'
+                                                            : isHigh
+                                                              ? 'Élevé'
+                                                              : 'OK'}
+                                                    </span>
+                                                </td>
+                                                {hasRole(
+                                                    'ADMIN',
+                                                    'RESP_LABO',
+                                                ) && (
+                                                    <td className="text-right">
+                                                        <div className="action-buttons">
+                                                            {dirty && (
+                                                                <button
+                                                                    onClick={() =>
+                                                                        saveAdjustment(
+                                                                            item.ingredient_id,
+                                                                        )
+                                                                    }
+                                                                    className="btn-save"
+                                                                    title="Sauver"
+                                                                >
+                                                                    <Save
+                                                                        size={14}
+                                                                        strokeWidth={
+                                                                            1.5
+                                                                        }
+                                                                    />
+                                                                </button>
+                                                            )}
+                                                            <button
+                                                                onClick={() =>
+                                                                    resetAdjustment(
+                                                                        item.ingredient_id,
+                                                                    )
+                                                                }
+                                                                className="btn-reset"
+                                                                title="Réinitialiser"
+                                                            >
+                                                                <RefreshCw
+                                                                    size={14}
+                                                                    strokeWidth={
+                                                                        1.5
+                                                                    }
+                                                                />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                )}
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
+                )}
+            </div>
+
+            {/* ── MODALS ── */}
+            <InventoryIngredientModal
+                open={ingredientModalOpen}
+                onClose={closeIngredientModal}
+            />
+
+            <StockEntryModal
+                open={stockEntryModalOpen}
+                onClose={closeStockEntryModal}
+                ingredients={ingredients}
+            />
+
+            <style>{`
+                .inventory-page { display: flex; flex-direction: column; gap: 1.5rem; }
+
+                /* Page Header */
+                .page-header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    flex-wrap: wrap;
+                    gap: 1rem;
+                }
+                .page-title { font-size: 1.5rem; font-weight: 700; color: var(--text-1); margin-bottom: 0.25rem; }
+                .page-subtitle { font-size: 0.8rem; color: var(--text-3); }
+                .header-actions { display: flex; gap: 0.5rem; }
+
+                /* Stats Grid */
+                .stats-grid {
+                    display: grid;
+                    grid-template-columns: repeat(2, 1fr);
+                    gap: 1rem;
+                }
+                @media (min-width: 640px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } }
+                @media (min-width: 1024px) { .stats-grid { grid-template-columns: repeat(5, 1fr); } }
+                .stat-card {
+                    background: var(--bg-card);
+                    border-radius: 14px;
+                    padding: 1rem;
+                    display: flex;
+                    align-items: center;
+                    gap: 0.85rem;
+                    border: 1px solid var(--border);
+                    transition: all 0.25s ease;
+                }
+                .stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
+                .stat-icon {
+                    width: 50px;
+                    height: 50px;
+                    border-radius: 12px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+                .stat-icon--orange { background: rgba(232, 116, 42, 0.1); color: var(--orange); }
+                .stat-icon--success { background: rgba(30, 158, 106, 0.1); color: var(--success); }
+                .stat-icon--danger { background: rgba(214, 59, 59, 0.1); color: var(--danger); }
+                .stat-icon--warning { background: rgba(232, 116, 42, 0.1); color: var(--orange); }
+                .stat-content { flex: 1; }
+                .stat-label { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; color: var(--text-3); margin-bottom: 0.25rem; }
+                .stat-value { font-size: 1.5rem; font-weight: 800; color: var(--orange); line-height: 1.2; }
+                .stat-value--success { color: var(--success); }
+                .stat-value--danger { color: var(--danger); }
+                .stat-value--warning { color: var(--orange); }
+
+                /* Alert */
+                .alert {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.75rem;
+                    padding: 0.875rem 1rem;
+                    border-radius: 12px;
+                }
+                .alert-danger {
+                    background: var(--danger-bg);
+                    border-left: 4px solid var(--danger);
+                }
+                .alert-warning {
+                    background: rgba(232, 116, 42, 0.1);
+                    border-left: 4px solid var(--orange);
+                }
+                .alert-text { font-size: 0.875rem; font-weight: 500; color: var(--text-2); }
+
+                /* Header Actions */
+                .header-actions { display: flex; gap: 0.5rem; }
+                .table-actions { display: flex; gap: 0.5rem; }
+
+                /* Table Card */
+                .table-card {
+                    background: var(--bg-card);
+                    border-radius: 14px;
+                    border: 1px solid var(--border);
+                    overflow: hidden;
+                }
+                .table-header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    padding: 1rem 1.25rem;
+                    border-bottom: 1px solid var(--border);
+                }
+                .table-title {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                    font-size: 0.85rem;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    color: var(--text-2);
+                }
+                .table-dot { width: 8px; height: 8px; background: var(--orange); border-radius: 50%; }
+
+                /* Row dirty indicator */
+                .row-dirty {
+                    background: rgba(232, 116, 42, 0.04);
+                }
+                .row-dirty:hover {
+                    background: rgba(232, 116, 42, 0.07);
+                }
+
+                /* Mobile List */
+                .mobile-list { display: flex; flex-direction: column; }
+                .mobile-row {
+                    padding: 1rem 1.25rem;
+                    border-bottom: 1px solid var(--border);
+                    transition: background 0.2s;
+                }
+                .mobile-row:hover { background: var(--bg-card-2); }
+                .mobile-row-top {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    margin-bottom: 0.5rem;
+                }
+                .mobile-name { font-weight: 600; font-size: 0.9rem; color: var(--text-1); }
+                .mobile-row-meta { display: flex; gap: 1rem; margin-bottom: 0.65rem; }
+                .meta-text { font-size: 0.75rem; color: var(--text-3); }
+                .mobile-stats {
+                    display: flex;
+                    gap: 1.5rem;
+                    padding-top: 0.5rem;
+                    border-top: 1px solid var(--border);
+                }
+                .mobile-stat {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
+                }
+                .mobile-stat-label {
+                    font-size: 0.6rem;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    color: var(--text-3);
+                }
+                .mobile-stat-value {
+                    font-size: 1rem;
+                    font-weight: 700;
+                }
+                .mobile-stat-divider {
+                    width: 1px;
+                    height: 28px;
+                    background: var(--border);
+                }
+
+                /* Adjustment section (mobile) */
+                .mobile-adjust-section {
+                    margin-top: 0.75rem;
+                    padding-top: 0.75rem;
+                    border-top: 1px dashed var(--border);
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.5rem;
+                }
+                .mobile-adjust-row {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                }
+                .mobile-adjust-row label {
+                    font-size: 0.75rem;
+                    font-weight: 600;
+                    color: var(--text-2);
+                }
+                .mobile-input-with-badge {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                }
+                .adjust-badge {
+                    font-size: 0.7rem;
+                    font-weight: 700;
+                    padding: 0.15rem 0.5rem;
+                    border-radius: 6px;
+                }
+                .badge--success {
+                    background: rgba(30, 158, 106, 0.15);
+                    color: var(--success);
+                }
+                .badge--danger {
+                    background: rgba(214, 59, 59, 0.15);
+                    color: var(--danger);
+                }
+                .badge--muted {
+                    background: var(--bg-card-2);
+                    color: var(--text-3);
+                }
+                .mobile-new-stock {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    font-size: 0.85rem;
+                }
+                .new-stock-label {
+                    color: var(--text-3);
+                    font-weight: 600;
+                }
+                .new-stock-value {
+                    font-weight: 700;
+                    color: #e8742a;
+                }
+
+                /* Threshold inputs (mobile) */
+                .mobile-row-actions {
+                    margin-top: 0.75rem;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    padding-top: 0.5rem;
+                    border-top: 1px solid var(--border);
+                }
+                .mobile-thresholds {
+                    display: flex;
+                    gap: 1rem;
+                }
+                .threshold-item {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.25rem;
+                }
+                .threshold-label {
+                    font-size: 0.6rem;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    color: var(--text-3);
+                }
+                .mobile-action-buttons {
+                    display: flex;
+                    gap: 0.5rem;
+                }
+
+                /* Desktop Table */
+                .table-wrapper { display: none; overflow-x: auto; }
+                @media (min-width: 1024px) {
+                    .mobile-list { display: none; }
+                    .table-wrapper { display: block; }
+                }
+                .data-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 0.875rem;
+                }
+                .data-table thead tr { border-bottom: 2px solid var(--border); }
+                .data-table th {
+                    padding: 0.85rem 1rem;
+                    font-size: 0.7rem;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    color: var(--text-3);
+                    text-align: left;
+                }
+                .data-table th.text-right { text-align: right; }
+                .data-table th.text-center { text-align: center; }
+                .data-table tbody tr {
+                    border-bottom: 1px solid var(--border);
+                    transition: background 0.2s;
+                }
+                .data-table tbody tr:hover { background: var(--bg-card-2); }
+                .data-table td {
+                    padding: 0.85rem 1rem;
+                    vertical-align: middle;
+                }
+                .data-table td.text-right { text-align: right; }
+                .data-table td.text-center { text-align: center; }
+
+                /* Adjustment cell (desktop) */
+                .adjust-cell {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 0.5rem;
+                }
+                .adjust-badge-small {
+                    font-size: 0.65rem;
+                    font-weight: 700;
+                    padding: 0.12rem 0.4rem;
+                    border-radius: 4px;
+                    white-space: nowrap;
+                }
+
+                /* Inputs */
+                .form-input {
+                    padding: 0.5rem 0.75rem;
+                    background: var(--bg-card-2);
+                    border: 1px solid var(--border);
+                    border-radius: 8px;
+                    font-size: 0.875rem;
+                    color: var(--text-1);
+                    transition: border-color 0.2s, box-shadow 0.2s;
+                }
+                .form-input:focus {
+                    outline: none;
+                    border-color: var(--orange);
+                    box-shadow: 0 0 0 3px rgba(232, 116, 42, 0.15);
+                }
+                .form-input--sm {
+                    width: 90px;
+                    text-align: center;
+                }
+                .form-input--xs {
+                    width: 70px;
+                    text-align: center;
+                    padding: 0.35rem 0.5rem;
+                    font-size: 0.8rem;
+                }
+                .form-input-inline {
+                    width: 80px;
+                    padding: 0.4rem 0.6rem;
+                    border: 1.5px solid var(--border);
+                    border-radius: 8px;
+                    font-size: 0.85rem;
+                    background: var(--bg-card);
+                    color: var(--text-1);
+                    text-align: center;
+                }
+                .form-input-inline:focus {
+                    outline: none;
+                    border-color: var(--orange);
+                    box-shadow: 0 0 0 3px rgba(232, 116, 42, 0.1);
+                }
+
+                /* Colors */
+                .text-success { color: var(--success); font-weight: 600; }
+                .text-danger { color: var(--danger); font-weight: 600; }
+                .text-warning { color: var(--orange); font-weight: 600; }
+                .text-orange { color: var(--orange); font-weight: 700; }
+                .text-muted { color: var(--text-3); }
+
+                /* Buttons */
+                .btn-primary {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 0.5rem;
+                    padding: 0.5rem 1.1rem;
+                    background: linear-gradient(135deg, var(--orange), var(--orange-lt));
+                    color: white;
+                    border: none;
+                    border-radius: 10px;
+                    font-size: 0.8rem;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.25s ease;
+                }
+                .btn-primary:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 12px rgba(232, 116, 42, 0.35);
+                }
+                .btn-secondary {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                    padding: 0.5rem 1.1rem;
+                    background: var(--bg-card-2);
+                    color: var(--text-2);
+                    border: 1px solid var(--border);
+                    border-radius: 10px;
+                    font-size: 0.8rem;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.25s ease;
+                }
+                .btn-secondary:hover {
+                    background: var(--bg-card);
+                    border-color: var(--orange);
+                    color: var(--orange);
+                }
+                .btn-ghost {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 0.4rem;
+                    padding: 0.35rem 0.8rem;
+                    background: transparent;
+                    color: var(--orange);
+                    border: 1px solid rgba(232, 116, 42, 0.3);
+                    border-radius: 8px;
+                    font-size: 0.75rem;
+                    font-weight: 500;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                }
+                .btn-ghost:hover {
+                    background: rgba(232, 116, 42, 0.1);
+                    transform: translateY(-1px);
+                }
+
+                /* Action buttons (desktop) */
+                .action-buttons {
+                    display: flex;
+                    gap: 0.4rem;
+                    justify-content: flex-end;
+                }
+                .btn-save {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 0.3rem 0.6rem;
+                    background: var(--success);
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                }
+                .btn-save:hover {
+                    background: #1a8d63;
+                }
+                .btn-reset {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 0.3rem 0.6rem;
+                    background: var(--bg-card-2);
+                    color: var(--text-3);
+                    border: 1px solid var(--border);
+                    border-radius: 6px;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                }
+                .btn-reset:hover {
+                    border-color: var(--orange);
+                    color: var(--orange);
+                }
+
+                /* Status badge */
+                .status-badge {
+                    font-size: 0.7rem;
+                    font-weight: 600;
+                    padding: 0.2rem 0.6rem;
+                    border-radius: 20px;
+                }
+                .status-badge--success {
+                    background: rgba(30, 158, 106, 0.1);
+                    color: var(--success);
+                }
+                .status-badge--danger {
+                    background: rgba(214, 59, 59, 0.1);
+                    color: var(--danger);
+                }
+                .status-badge--warning {
+                    background: rgba(232, 116, 42, 0.1);
+                    color: var(--orange);
+                }
+
+                /* Empty State */
+                .empty-state-card {
+                    background: var(--bg-card-2);
+                    text-align: center;
+                    padding: 3rem;
+                    color: var(--text-3);
+                }
+                .empty-state-text {
+                    margin-top: 1rem;
+                    font-size: 0.9rem;
+                }
+
+                /* Product name */
+                .product-name {
+                    font-weight: 600;
+                    color: var(--text-1);
+                }
+            `}</style>
+        </div>
+    );
+}
