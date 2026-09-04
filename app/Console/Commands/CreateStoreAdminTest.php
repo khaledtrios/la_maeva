@@ -50,7 +50,7 @@ class CreateStoreAdminTest extends Command
             'name' => 'Admin Test',
             'email' => 'admin.test@example.test',
             'password' => Hash::make('password123'),
-            'role' => StoreUserRole::StoreAdmin,
+            'role' => StoreUserRole::StoreAdmin->value,
             'active' => true,
         ]);
 

@@ -2,44 +2,87 @@
 
 namespace Database\Factories;
 
+use App\Models\Entity;
+use App\Models\Store;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 
 /**
  * @extends Factory<User>
+ *
+ * PHASE 3.5 — factory remise en conformité (point M4 de l'audit).
+ *
+ * L'ancienne version était le squelette Laravel par défaut (`name`, `email`,
+ * `password`, `remember_token`) alors que la table `users` de ce projet utilise
+ * `nom`, `pin`, `role`, `entity_id` et `store_id` : elle produisait donc des
+ * utilisateurs invalides, et surtout SANS store — un état « fail-open » qui
+ * aurait faussé les tests d'isolation de la Phase 4.
+ *
+ * Garantie apportée : un utilisateur créé par cette factory a TOUJOURS une
+ * entité et le store de cette entité, les deux cohérents entre eux.
  */
 class UserFactory extends Factory
 {
-    /**
-     * The current password being used by the factory.
-     */
-    protected static ?string $password;
+    protected $model = User::class;
 
-    /**
-     * Define the model's default state.
-     *
-     * @return array<string, mixed>
-     */
     public function definition(): array
     {
         return [
-            'name' => fake()->name(),
-            'email' => fake()->unique()->safeEmail(),
-            'email_verified_at' => now(),
-            'password' => static::$password ??= Hash::make('password'),
-            'remember_token' => Str::random(10),
+            'nom' => fake()->name(),
+            'pin' => User::hashPin(fake()->numerify('####')),
+            'role' => 'EMPLOYE_LABO',
+            'auth_type' => 'PIN',
+            'active' => true,
+            // entity_id / store_id : résolus dans configure() pour rester cohérents.
         ];
     }
 
-    /**
-     * Indicate that the model's email address should be unverified.
-     */
-    public function unverified(): static
+    public function configure(): static
     {
-        return $this->state(fn (array $attributes) => [
-            'email_verified_at' => null,
-        ]);
+        return $this->afterMaking(function (User $user) {
+            // Si l'appelant a fourni une entité, le store en découle.
+            if ($user->entity_id) {
+                $user->store_id ??= Entity::whereKey($user->entity_id)->value('store_id');
+
+                return;
+            }
+
+            // Sinon on part du store fourni, ou on en crée un complet.
+            $store = $user->store_id
+                ? Store::find($user->store_id)
+                : Store::factory()->active()->create();
+
+            $entity = Entity::where('store_id', $store->id)->first()
+                ?? tap(Entity::create([
+                    'type' => 'LABO',
+                    'nom' => 'Labo ' . $store->name,
+                    'adresse' => $store->address ?? 'Adresse labo',
+                ]), function (Entity $created) use ($store) {
+                    // store_id est hors $fillable (protection anti-changement de
+                    // tenant par assignation de masse) : affectation directe.
+                    $created->store_id = $store->id;
+                    $created->save();
+                });
+
+            $user->entity_id = $entity->id;
+            $user->store_id = $store->id;
+        });
+    }
+
+    /** Rôle explicite (ADMIN, RESP_LABO, EMPLOYE_LABO, RESP_BOUTIQUE, EMPLOYE_VENTE, DIRECTION). */
+    public function role(string $role): static
+    {
+        return $this->state(fn () => ['role' => $role]);
+    }
+
+    /** PIN connu, pour tester une connexion. */
+    public function withPin(string $pin): static
+    {
+        return $this->state(fn () => ['pin' => User::hashPin($pin)]);
+    }
+
+    public function inactive(): static
+    {
+        return $this->state(fn () => ['active' => false]);
     }
 }

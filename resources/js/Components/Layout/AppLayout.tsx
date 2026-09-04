@@ -37,6 +37,8 @@ import { index as reportingIndex } from '@/routes/reporting';
 import { index as returnsIndex } from '@/routes/returns';
 import { index as salesIndex } from '@/routes/sales';
 import { index as stockIndex } from '@/routes/stock';
+// Store Admin routes
+import store from '@/routes/store';
 import type { Role } from '@/types';
 
 type RouteObject = { url: (options?: Record<string, unknown>) => string };
@@ -197,6 +199,22 @@ const navigationByRole: Record<
         { name: 'Reporting', route: reportingIndex, roles: ['ADMIN'] },
         { name: 'Admin', route: adminIndex, roles: ['ADMIN'] },
     ],
+    STORE_ADMIN: [
+        { name: 'Dashboard', route: store.dashboard, roles: ['STORE_ADMIN'] },
+        { name: 'Production', route: store.production, roles: ['STORE_ADMIN'] },
+        { name: 'Stocks Labo', route: store.inventory, roles: ['STORE_ADMIN'] },
+        { name: 'Stocks Boutique', route: store.stocks, roles: ['STORE_ADMIN'] },
+        { name: 'Produits', route: store.products, roles: ['STORE_ADMIN'] },
+        { name: 'Expéditions', route: store.expeditions, roles: ['STORE_ADMIN'] },
+        { name: 'Facturation', route: store.facturation, roles: ['STORE_ADMIN'] },
+        { name: 'Réceptions', route: store.receptions, roles: ['STORE_ADMIN'] },
+        { name: 'Retours', route: store.returns, roles: ['STORE_ADMIN'] },
+        { name: 'Ventes', route: store.sales, roles: ['STORE_ADMIN'] },
+        { name: 'HACCP', route: store.haccp, roles: ['STORE_ADMIN'] },
+        { name: 'Incidents', route: store.incidents, roles: ['STORE_ADMIN'] },
+        { name: 'Reporting', route: store.reporting, roles: ['STORE_ADMIN'] },
+        { name: 'Admin', route: store.admin, roles: ['STORE_ADMIN'] },
+    ],
 };
 
 function initials(name?: string | null): string {
@@ -210,10 +228,41 @@ function initials(name?: string | null): string {
 }
 
 function AppLayout({ children }: PropsWithChildren) {
-    const { auth } = usePage().props as any;
+    const { auth, slug } = usePage().props as any;
     const user = auth?.user;
     const hasRole = (...roles: Role[]): boolean =>
         roles.includes(user?.role ?? ('' as Role));
+
+    // L'URL de déconnexion dépend du type d'utilisateur (guard) :
+    // - Store Admin  -> POST /store/logout
+    // - Employé/Admin interne (guard web, sous slug) -> POST /{slug}/logout
+    const logoutUrl =
+        user?.role === 'STORE_ADMIN'
+            ? '/store/logout'
+            : slug
+              ? `/${slug}/logout`
+              : logout.url();
+
+    // Les helpers de routes employé génèrent des URLs SANS slug (ex: /production).
+    // Or toutes les routes employé sont préfixées par /{slug}. On préfixe donc
+    // ici, sauf pour les zones qui ont déjà leur propre préfixe (/store, /super-admin).
+    const navUrl = (item: { route: RouteObject }): string => {
+        const url = item.route.url();
+
+        if (url.startsWith('/store') || url.startsWith('/super-admin')) {
+            return url;
+        }
+
+        if (slug) {
+            // Éviter un double préfixe si l'URL contient déjà le slug
+            if (url === `/${slug}` || url.startsWith(`/${slug}/`)) {
+                return url;
+            }
+            return `/${slug}${url === '/' ? '' : url}`;
+        }
+
+        return url;
+    };
     const currentPath =
         typeof window !== 'undefined' ? window.location.pathname : '';
 
@@ -268,7 +317,7 @@ return false;
 
     const handleLogout = (e: React.FormEvent) => {
         e.preventDefault();
-        router.post(logout.url());
+        router.post(logoutUrl);
     };
 
     const entityName = user?.entity?.nom ?? `Entité #${user?.entity_id}`;
@@ -276,7 +325,7 @@ return false;
     const overflowMobileItems = navigation.slice(MOBILE_VISIBLE);
     const hasOverflow = overflowMobileItems.length > 0;
     const activeInOverflow = overflowMobileItems.some(
-        (item) => currentPath === item.route.url(),
+        (item) => currentPath === navUrl(item),
     );
 
     return (
@@ -316,7 +365,7 @@ return false;
                     </div>
                     <form
                         method="post"
-                        action={logout.url()}
+                        action={logoutUrl}
                         onSubmit={handleLogout}
                     >
                         <button type="submit" className="btn-logout">
@@ -374,7 +423,7 @@ return null;
                                         {groupItems.map((item) => {
                                             const isActive =
                                                 currentPath ===
-                                                item.route.url();
+                                                navUrl(item);
 
                                             return (
                                                 <button
@@ -382,7 +431,7 @@ return null;
                                                     type="button"
                                                     onClick={() =>
                                                         navigate(
-                                                            item.route.url(),
+                                                            navUrl(item),
                                                         )
                                                     }
                                                     className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
@@ -440,7 +489,7 @@ return null;
                     </div>
                     <form
                         method="post"
-                        action={logout.url()}
+                        action={logoutUrl}
                         onSubmit={handleLogout}
                     >
                         <button
@@ -465,13 +514,13 @@ return null;
             <nav className="fixed right-0 bottom-0 left-0 z-40 border-t border-gray-200 bg-white shadow-lg lg:hidden">
                 <div className="flex h-16 items-stretch">
                     {visibleMobileItems.map((item) => {
-                        const isActive = currentPath === item.route.url();
+                        const isActive = currentPath === navUrl(item);
 
                         return (
                             <button
                                 key={item.name}
                                 type="button"
-                                onClick={() => navigate(item.route.url())}
+                                onClick={() => navigate(navUrl(item))}
                                 className={`flex flex-1 flex-col items-center justify-center gap-1 transition-all duration-200 ${
                                     isActive
                                         ? 'text-blue-600'
@@ -583,7 +632,7 @@ return null;
                                                 {groupItems.map((item) => {
                                                     const isActive =
                                                         currentPath ===
-                                                        item.route.url();
+                                                        navUrl(item);
 
                                                     return (
                                                         <button
@@ -591,7 +640,7 @@ return null;
                                                             type="button"
                                                             onClick={() =>
                                                                 navigate(
-                                                                    item.route.url(),
+                                                                    navUrl(item),
                                                                 )
                                                             }
                                                             className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-all duration-200 ${

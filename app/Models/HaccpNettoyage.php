@@ -2,11 +2,25 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToStore;
+use App\Models\Scopes\StoreScope;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Model;
 
 class HaccpNettoyage extends Model
 {
+    use BelongsToStore;
+
+    /**
+     * PHASE 4 — ÉTAPE 5 (groupe 2/HACCP) : cloisonnement automatique.
+     * updateNettoyage() a deja un controle manuel entity_id ; le scope
+     * protege aussi le route-model-binding lui-meme.
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new StoreScope());
+    }
+
     protected $table = 'haccp_nettoyage';
 
     protected $fillable = ['entity_id', 'date', 'taches_json', 'statut', 'valide_par'];

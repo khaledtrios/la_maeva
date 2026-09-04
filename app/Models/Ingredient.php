@@ -2,11 +2,25 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToStore;
+use App\Models\Scopes\StoreScope;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Model;
 
 class Ingredient extends Model
 {
+    use BelongsToStore;
+
+    /**
+     * PHASE 4 — ÉTAPE 5 (groupe 1/fondamentaux) : cloisonnement automatique.
+     * Meme defaut que Category corrige ici : IngredientController n'avait
+     * aucun filtre par store.
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new StoreScope());
+    }
+
     protected $fillable = ['nom', 'unite', 'prix_unitaire'];
 
     /**

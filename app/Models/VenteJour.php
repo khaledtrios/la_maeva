@@ -2,12 +2,25 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToStore;
+use App\Models\Scopes\StoreScope;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Model;
 use Carbon\Carbon;
 
 class VenteJour extends Model
 {
+    use BelongsToStore;
+
+    /**
+     * PHASE 4 — ÉTAPE 5 (groupe 6/Ventes) : cloisonnement automatique.
+     * SaleController filtre deja par entity_id (defense en profondeur ici).
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new StoreScope());
+    }
+
     protected $table = 'ventes_jour';
 
     protected $fillable = [

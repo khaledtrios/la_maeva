@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToStore;
+use App\Models\Scopes\StoreScope;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Model;
@@ -20,6 +22,25 @@ use Illuminate\Database\Eloquent\Model;
  */
 class CommandeUrgente extends Model
 {
+    use BelongsToStore;
+
+    /**
+     * PHASE 4 — ÉTAPE 5 (groupe 6/Ventes) : cloisonnement automatique.
+     * FUITE REELLE FERMEE ICI (pas seulement defense en profondeur) :
+     * show()/take()/updateStatus()/createBl() vont chercher la commande via
+     * CommandeUrgente::findOrFail() (direct ou via CommandeUrgenteService), et
+     * le controle manuel actuel ne verifie l'appartenance store QUE pour les
+     * roles boutique (RESP_BOUTIQUE/EMPLOYE_VENTE) — le commentaire du
+     * controleur dit explicitement "Labo : voit toutes les commandes des
+     * boutiques (pas de restriction)". Un labo pouvait donc voir/prendre en
+     * charge/generer un BL pour la commande d'une boutique d'un AUTRE store.
+     * Le scope ferme cette fuite pour tous les roles, sans exception.
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new StoreScope());
+    }
+
     protected $table = 'commandes_urgentes';
 
     public const STATUT_ENVOYEE = 'ENVOYEE';

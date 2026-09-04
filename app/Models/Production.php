@@ -2,12 +2,28 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToStore;
+use App\Models\Scopes\StoreScope;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Model;
 
 class Production extends Model
 {
+    use BelongsToStore;
+
+    /**
+     * PHASE 4 — ÉTAPE 5 (groupe 4/Production) : cloisonnement automatique.
+     * ProductionController::update()/destroy() utilisent le route-model-binding
+     * avec un controle manuel P0 (hasGlobalEntityAccess()) : le scope protege
+     * desormais aussi le binding lui-meme (IDOR devient 404 au lieu de 403,
+     * comme deja constate au groupe 2 sur HaccpNonConformite).
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new StoreScope());
+    }
+
     protected $fillable = ['entity_id', 'product_id', 'quantite', 'quantite_pertes', 'lot', 'date', 'created_by'];
 
     /**

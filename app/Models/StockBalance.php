@@ -2,12 +2,24 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToStore;
+use App\Models\Scopes\StoreScope;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Model;
 use Carbon\Carbon;
 
 class StockBalance extends Model
 {
+    use BelongsToStore;
+
+    /**
+     * PHASE 4 — ÉTAPE 5 (groupe 3/Stocks) : cloisonnement automatique.
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new StoreScope());
+    }
+
     /**
      * La table a une colonne id auto-incrémenté (PK).
      * Unicity garantie par deux indexes uniques:

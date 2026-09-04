@@ -15,12 +15,17 @@ class NonConformiteController extends Controller
      */
     public function index()
     {
-        $user = Auth::user();
+        $user = $this->getCurrentUser();
 
         $query = HaccpNonConformite::with(['creator', 'entity']);
 
-        if ($user->role !== 'ADMIN' && $user->role !== 'DIRECTION') {
-            $query->where('entity_id', $user->entity_id);
+        // Accès global en lecture : ADMIN + DIRECTION (guard "web") uniquement.
+        // Le Store Admin reste cloisonné à l'entité de son store.
+        $seesAllEntities = !$this->isStoreAdmin()
+            && in_array($user->role, ['ADMIN', 'DIRECTION']);
+
+        if (!$seesAllEntities) {
+            $query->where('entity_id', $this->getCurrentEntityId());
         }
 
         $ncs = $query->orderByDesc('date')->get();
@@ -35,8 +40,8 @@ class NonConformiteController extends Controller
      */
     public function store(Request $request)
     {
-        $user = Auth::user();
-        $entityId = $user->entity_id;
+        $user = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
 
         $validated = $request->validate([
             'type'       => ['required', 'string', 'max:255'],
@@ -61,10 +66,11 @@ class NonConformiteController extends Controller
      */
     public function update(Request $request, HaccpNonConformite $nc)
     {
-        $user = Auth::user();
+        $entityId = $this->getCurrentEntityId();
 
-        // Vérifier ownership (sauf ADMIN)
-        if ($user->role !== 'ADMIN' && $nc->entity_id !== $user->entity_id) {
+        // Ownership — seul l'ADMIN interne (guard "web") a un accès global. Le
+        // Store Admin reste cloisonné à son entité.
+        if (!$this->hasGlobalEntityAccess() && $nc->entity_id !== $entityId) {
             abort(403);
         }
 

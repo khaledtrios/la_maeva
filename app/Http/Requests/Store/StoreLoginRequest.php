@@ -3,7 +3,7 @@
 namespace App\Http\Requests\Store;
 
 use App\Enums\StoreStatus;
-use App\Models\User;
+use App\Models\StoreUser;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
@@ -35,19 +35,17 @@ class StoreLoginRequest extends FormRequest
 
     /**
      * Tente d'authentifier la requête sur le guard "store".
-     * Authentifie les Users transformés en Store Admin (role=ADMIN, auth_type=EMAIL_PASSWORD)
+     * Authentifie les StoreUser (Store Admin)
      */
     public function authenticate(): void
     {
         $this->ensureIsNotRateLimited();
 
-        // Rechercher un User Store Admin par email
-        $user = User::where('email', $this->input('email'))
-            ->where('role', 'ADMIN')
-            ->where('auth_type', 'EMAIL_PASSWORD')
+        // Rechercher un StoreUser (Store Admin) par email
+        $storeUser = StoreUser::where('email', $this->input('email'))
             ->first();
 
-        if (! $user || ! Hash::check($this->input('password'), $user->password)) {
+        if (! $storeUser || ! Hash::check($this->input('password'), $storeUser->password)) {
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([
@@ -55,7 +53,7 @@ class StoreLoginRequest extends FormRequest
             ]);
         }
 
-        if (! $user->active) {
+        if (! $storeUser->active) {
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([
@@ -63,13 +61,13 @@ class StoreLoginRequest extends FormRequest
             ]);
         }
 
-        if (! $user->store || ! $user->store->isActive()) {
+        if (! $storeUser->store || ! $storeUser->store->isActive()) {
             RateLimiter::hit($this->throttleKey());
 
             $message = 'Accès non autorisé.';
-            if ($user->store) {
-                $message = match ($user->store->status) {
-                    StoreStatus::Pending => "Votre boutique « {$user->store->name} » est en attente de validation par notre équipe.",
+            if ($storeUser->store) {
+                $message = match ($storeUser->store->status) {
+                    StoreStatus::Pending => "Votre boutique « {$storeUser->store->name} » est en attente de validation par notre équipe.",
                     StoreStatus::Rejected => "Votre demande d'inscription a été refusée.",
                     StoreStatus::Suspended => 'Votre boutique a été suspendue. Contactez le support pour plus d\'informations.',
                     default => 'Accès non autorisé.',
@@ -83,7 +81,7 @@ class StoreLoginRequest extends FormRequest
 
         RateLimiter::clear($this->throttleKey());
 
-        Auth::guard('store')->login($user, $this->boolean('remember'));
+        Auth::guard('store')->login($storeUser, $this->boolean('remember'));
     }
 
     /**

@@ -39,7 +39,9 @@ class StoreUser extends Authenticatable
         return [
             'password' => 'hashed',
             'active' => 'boolean',
-            'role' => StoreUserRole::class,
+            // NB: 'role' est volontairement laissé en string (valeur 'STORE_ADMIN')
+            // et non casté en enum, pour rester cohérent avec User::role (string)
+            // que tous les contrôleurs comparent via des strings (in_array, ===).
             'email_verified_at' => 'datetime',
         ];
     }
@@ -50,5 +52,13 @@ class StoreUser extends Authenticatable
     public function store(): BelongsTo
     {
         return $this->belongsTo(Store::class);
+    }
+
+    /**
+     * Obtenir l'entity_id associé à ce Store Admin via la relation store
+     */
+    public function getEntityIdAttribute(): ?int
+    {
+        return $this->store?->entity_id;
     }
 }

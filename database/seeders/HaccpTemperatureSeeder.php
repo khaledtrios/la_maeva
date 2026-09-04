@@ -16,7 +16,7 @@ class HaccpTemperatureSeeder extends Seeder
      */
     public function run(): void
     {
-        $entities = [1, 2, 3, 4]; // labo + 3 boutiques
+        $entities = [1, 2, 3]; // Cayenne, Paris, Marseille
         $encerntes = [
             'Chambre froide positive',
             'Chambre froide négative',

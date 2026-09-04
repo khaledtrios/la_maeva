@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToStore;
+use App\Models\Scopes\StoreScope;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Model;
@@ -22,6 +24,23 @@ use Illuminate\Database\Eloquent\Model;
  */
 class ProductReturn extends Model
 {
+    use BelongsToStore;
+
+    /**
+     * PHASE 4 — ÉTAPE 5 (groupe 5/Logistique) : cloisonnement automatique.
+     * Table a DEUX entites (entity_id = boutique emettrice, labo_entity_id =
+     * LABO destinataire) : store_id derive de entity_id (proprietaire du
+     * document), etabli et verifie sans ambiguite en Phase 3 (0 ligne
+     * inter-store). Plusieurs methodes du controleur (show/update/send/cancel/
+     * confirm/reject/process) utilisent le route-model-binding avec des
+     * controles manuels varies (created_by ou entity_id/labo_entity_id) : le
+     * scope protege desormais aussi le binding lui-meme, uniformement.
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new StoreScope());
+    }
+
     protected $fillable = [
         'reference',
         'reception_id',

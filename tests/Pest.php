@@ -44,7 +44,45 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+/**
+ * Crée une entité (LABO ou BOULANGERIE) rattachée à un store.
+ *
+ * Depuis la vague 3a de la Phase 4, `entities.store_id` est NOT NULL. Or une
+ * entité est la seule table qui n'a aucune colonne d'où dériver son store : le
+ * rattachement doit donc venir du CONTEXTE. En production ce contexte existe
+ * toujours (AdminController est authentifié) ; dans les tests, il faut le poser
+ * explicitement — d'où ce helper, qui utilise `CurrentStore::for()` pour que le
+ * trait BelongsToStore renseigne `store_id` normalement.
+ *
+ * À utiliser partout où un test créait `Entity::create([...])` sans contexte.
+ */
+function creerEntite(int $storeId, string $type, string $nom, ?string $adresse = null): App\Models\Entity
 {
-    // ..
+    return App\Support\CurrentStore::for($storeId, fn () => App\Models\Entity::create([
+        'type' => $type,
+        'nom' => $nom,
+        'adresse' => $adresse ?? "Adresse {$nom}",
+    ]));
+}
+
+/**
+ * Monte un store ACTIF avec son labo et sa boutique, tous rattachés.
+ *
+ * Retourne [store, labo, boutique]. `stores.entity_id` pointe le labo, ce qui
+ * reproduit la structure réelle produite par les seeders.
+ */
+function creerStoreComplet(string $nom, string $slug): array
+{
+    $store = App\Models\Store::factory()->active()->create([
+        'name' => $nom,
+        'slug' => $slug,
+    ]);
+
+    $labo = creerEntite($store->id, 'LABO', "Labo {$nom}");
+    $boutique = creerEntite($store->id, 'BOULANGERIE', "Boutique {$nom}");
+
+    $store->entity_id = $labo->id;
+    $store->save();
+
+    return [$store, $labo, $boutique];
 }

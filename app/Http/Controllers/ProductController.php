@@ -12,6 +12,28 @@ use Illuminate\Support\Facades\Auth;
 class ProductController extends Controller
 {
     /**
+     * Résout le produit depuis le paramètre de route `{product}`.
+     *
+     * Les routes produits existent en DEUX déclinaisons : sous /{slug}/products
+     * (espace Employé) et sous /store/products (espace Store Admin). Laravel
+     * injecte les paramètres de route par POSITION : avec un `Product $product`
+     * type-hinté, la variante /{slug} passait le slug (string) à la place du
+     * modèle → TypeError 500. On récupère donc le paramètre PAR SON NOM, ce qui
+     * fonctionne pour les deux déclinaisons. Le StoreScope global sur Product
+     * conserve le cloisonnement (pas d'IDOR inter-store).
+     */
+    private function resolveProduct(Request $request): Product
+    {
+        $product = $request->route('product');
+
+        if ($product instanceof Product) {
+            return $product;
+        }
+
+        return Product::findOrFail($product);
+    }
+
+    /**
      * Liste des produits (avec catégorie et recette chargées)
      */
     public function index()
@@ -49,8 +71,10 @@ class ProductController extends Controller
     /**
      * Mettre à jour un produit
      */
-    public function update(Request $request, Product $product)
+    public function update(Request $request)
     {
+        $product = $this->resolveProduct($request);
+
         $validated = $request->validate([
             'category_id'  => ['required', 'integer', 'exists:categories,id'],
             'nom'          => ['required', 'string', 'max:255'],
@@ -68,8 +92,10 @@ class ProductController extends Controller
     /**
      * Supprimer un produit
      */
-    public function destroy(Product $product)
+    public function destroy(Request $request)
     {
+        $product = $this->resolveProduct($request);
+
         $nom = $product->nom;
         $product->delete();
 
@@ -79,8 +105,10 @@ class ProductController extends Controller
     /**
      * GET /products/{product}/recipe — charge les lignes de recette d'un produit
      */
-    public function recipe(Product $product)
+    public function recipe(Request $request)
     {
+        $product = $this->resolveProduct($request);
+
         $recipeLines = $product->recipes()->with('ingredient')->get();
 
         return response()->json($recipeLines);
@@ -89,8 +117,10 @@ class ProductController extends Controller
     /**
      * PUT /products/{product}/recipe — met à jour la recette d'un produit (replace complet)
      */
-    public function updateRecipe(Request $request, Product $product)
+    public function updateRecipe(Request $request)
     {
+        $product = $this->resolveProduct($request);
+
         $validated = $request->validate([
             'lignes'                 => ['required', 'array', 'min:1'],
             'lignes.*.ingredient_id' => ['required', 'integer', 'exists:ingredients,id'],

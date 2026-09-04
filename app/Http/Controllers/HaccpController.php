@@ -20,8 +20,8 @@ class HaccpController extends Controller
 
     public function index()
     {
-        $user = Auth::user();
-        $entityId = $user->entity_id;
+        $user = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
 
         // Charger toutes les données HACCP pour l'entité
         $temperatures = HaccpTemperature::with('creator')
@@ -56,8 +56,8 @@ class HaccpController extends Controller
      */
     public function temperatures()
     {
-        $user = Auth::user();
-        $entityId = $user->entity_id;
+        $user = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
 
         $temperatures = HaccpTemperature::with('creator')
             ->where('entity_id', $entityId)
@@ -87,8 +87,8 @@ class HaccpController extends Controller
      */
     public function storeTemperature(Request $request)
     {
-        $user = Auth::user();
-        $entityId = $user->entity_id;
+        $user = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
 
         $validated = $request->validate([
             'enceinte'      => ['required', 'string', 'max:255'],
@@ -117,8 +117,8 @@ class HaccpController extends Controller
      */
     public function nettoyage()
     {
-        $user = Auth::user();
-        $entityId = $user->entity_id;
+        $user = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
 
         $temperatures = HaccpTemperature::with('creator')
             ->where('entity_id', $entityId)
@@ -148,8 +148,8 @@ class HaccpController extends Controller
      */
     public function storeNettoyage(Request $request)
     {
-        $user = Auth::user();
-        $entityId = $user->entity_id;
+        $user = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
 
         $validated = $request->validate([
             'date'          => ['required', 'date'],
@@ -171,8 +171,8 @@ class HaccpController extends Controller
      */
     public function updateNettoyage(Request $request, HaccpNettoyage $nettoyage)
     {
-        $user = Auth::user();
-        $entityId = $user->entity_id;
+        $user = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
 
         if ($nettoyage->entity_id !== $entityId) {
             abort(403);
@@ -209,8 +209,8 @@ class HaccpController extends Controller
      */
     public function receptionsFournisseurs()
     {
-        $user = Auth::user();
-        $entityId = $user->entity_id;
+        $user = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
 
         $temperatures = HaccpTemperature::with('creator')
             ->where('entity_id', $entityId)
@@ -242,8 +242,8 @@ class HaccpController extends Controller
      */
     public function storeReceptionFournisseur(Request $request)
     {
-        $user = Auth::user();
-        $entityId = $user->entity_id;
+        $user = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
 
         $validated = $request->validate([
             'fournisseur' => ['required', 'string', 'max:255'],

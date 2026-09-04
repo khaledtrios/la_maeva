@@ -2,11 +2,24 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToStore;
+use App\Models\Scopes\StoreScope;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Model;
 
 class HaccpTemperature extends Model
 {
+    use BelongsToStore;
+
+    /**
+     * PHASE 4 — ÉTAPE 5 (groupe 2/HACCP) : cloisonnement automatique.
+     * HaccpController filtre déjà par entity_id (défense en profondeur ici).
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new StoreScope());
+    }
+
     protected $table = 'haccp_temperatures';
 
     protected $fillable = ['entity_id', 'enceinte', 'temperature', 'date', 'created_by'];

@@ -22,11 +22,12 @@ class ExpeditionController extends Controller
      */
     public function index()
     {
-        $user = Auth::user();
+        $user = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
 
         $expeditions = Expedition::with(['entity', 'boulangerie', 'lines.product', 'creator', 'reception'])
-            ->when($user->role !== 'ADMIN' && $user->role !== 'DIRECTION', function ($q) use ($user) {
-                $q->where('entity_id', $user->entity_id);
+            ->when($user->role !== 'ADMIN' && $user->role !== 'DIRECTION', function ($q) use ($entityId) {
+                $q->where('entity_id', $entityId);
             })
             ->orderByDesc('date')
             ->orderByDesc('id')
@@ -35,7 +36,7 @@ class ExpeditionController extends Controller
         $boulangeries = Entity::where('type', 'BOULANGERIE')->orderBy('nom')->get();
 
         // Produits disponibles (stock > 0) avec leur quantité disponible
-        $availableProducts = $this->getAvailableProducts($user->entity_id);
+        $availableProducts = $this->getAvailableProducts($entityId);
 
         return Inertia::render('Expeditions/Index', [
             'expeditions'      => $expeditions,
@@ -52,10 +53,10 @@ class ExpeditionController extends Controller
      */
     public function getAvailableProducts(int $entityId)
     {
-        $user = Auth::user();
+        $user = $this->getCurrentUser();
 
-        // Labo uniquement
-        if (!in_array($user->role, ['ADMIN', 'RESP_LABO', 'EMPLOYE_LABO'])) {
+        // Labo uniquement (+ Store Admin)
+        if (!in_array($user->role, ['ADMIN', 'RESP_LABO', 'EMPLOYE_LABO', 'STORE_ADMIN'])) {
             abort(403);
         }
 
@@ -125,10 +126,15 @@ class ExpeditionController extends Controller
      */
     public function show(Expedition $expedition)
     {
-        $user = Auth::user();
+        $user = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
 
-        // Vérifier l'accès : ADMIN/DIRECTION voient tout, autres voient seulement leurs expéditions
-        if ($user->role !== 'ADMIN' && $user->role !== 'DIRECTION' && $expedition->entity_id !== $user->entity_id) {
+        // Accès global : ADMIN + DIRECTION (guard "web") uniquement. Le Store
+        // Admin reste cloisonné à l'entité de son store.
+        $seesAllEntities = !$this->isStoreAdmin()
+            && in_array($user->role, ['ADMIN', 'DIRECTION']);
+
+        if (!$seesAllEntities && $expedition->entity_id !== $entityId) {
             abort(403, 'Accès non autorisé.');
         }
 
@@ -159,8 +165,27 @@ class ExpeditionController extends Controller
             'lines.*.quantite'   => ['required', 'integer', 'min:1'],
         ]);
 
-        $user = Auth::user();
-        $laboEntityId = $user->entity_id;
+        $user = $this->getCurrentUser();
+        $laboEntityId = $this->getCurrentEntityId();
+
+        // Intégrité + cloisonnement : `exists:entities,id` ne garantit ni le type
+        // ni la cohérence de la destination. On vérifie que la cible est bien une
+        // BOULANGERIE, distincte de l'entité émettrice.
+        // NB : restreindre en plus aux boulangeries rattachées au store nécessite
+        // un lien store -> boulangeries autorisées, absent du schéma actuel.
+        $boulangerie = Entity::find($validated['boulangerie_id']);
+
+        if (!$boulangerie || $boulangerie->type !== 'BOULANGERIE') {
+            throw ValidationException::withMessages([
+                'boulangerie_id' => 'La destination doit être une boulangerie valide.',
+            ]);
+        }
+
+        if ((int) $validated['boulangerie_id'] === (int) $laboEntityId) {
+            throw ValidationException::withMessages([
+                'boulangerie_id' => 'Impossible d\'expédier vers votre propre entité.',
+            ]);
+        }
 
         // Valider la disponibilité du stock pour chaque ligne avant la transaction
         foreach ($validated['lines'] as $index => $ligne) {
@@ -223,10 +248,11 @@ class ExpeditionController extends Controller
      */
     public function updateStatus(Request $request, Expedition $expedition)
     {
-        $user = Auth::user();
+        $user = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
 
-        // Vérifier ownership (sauf ADMIN)
-        if ($user->role !== 'ADMIN' && $expedition->entity_id !== $user->entity_id) {
+        // Vérifier ownership (ADMIN/DIRECTION peut tout faire, autres doivent vérifier leur entity_id)
+        if (!in_array($user->role, ['ADMIN', 'DIRECTION']) && $expedition->entity_id !== $entityId) {
             abort(403);
         }
 

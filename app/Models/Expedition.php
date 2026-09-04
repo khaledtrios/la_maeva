@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToStore;
+use App\Models\Scopes\StoreScope;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -9,6 +11,22 @@ use Illuminate\Database\Eloquent\Model;
 
 class Expedition extends Model
 {
+    use BelongsToStore;
+
+    /**
+     * PHASE 4 — ÉTAPE 5 (groupe 5/Logistique) : cloisonnement automatique.
+     * Table a DEUX entites (entity_id = LABO emetteur, boulangerie_id =
+     * BOULANGERIE destinataire) : store_id derive de entity_id (proprietaire du
+     * document), etabli et verifie sans ambiguite en Phase 3 (0 ligne
+     * inter-store, flux toujours intra-store). show()/updateStatus() ont deja un
+     * controle manuel (P0) ; le scope protege desormais aussi le binding
+     * lui-meme (IDOR -> 404 au lieu de 403, comme groupes 2 et 4).
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new StoreScope());
+    }
+
     protected $fillable = ['entity_id', 'boulangerie_id', 'date', 'statut', 'created_by'];
 
     /**

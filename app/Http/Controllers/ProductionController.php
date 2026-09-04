@@ -29,8 +29,8 @@ class ProductionController extends Controller
      */
     public function index(Request $request)
     {
-        $user     = Auth::user();
-        $entityId = $user->entity_id;
+        $user     = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
         $date     = $request->query('date', now()->toDateString());
 
         // 1. Tous les produits (avec catégorie)
@@ -283,8 +283,8 @@ class ProductionController extends Controller
      */
     public function store(Request $request)
     {
-        $user     = Auth::user();
-        $entityId = $user->entity_id;
+        $user     = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
 
         $validated = $request->validate([
             'product_id'      => ['required', 'integer', 'exists:products,id'],
@@ -350,10 +350,11 @@ class ProductionController extends Controller
      */
     public function update(Request $request, Production $production)
     {
-        $user = Auth::user();
+        $entityId = $this->getCurrentEntityId();
 
-        // Vérification ownership (sauf ADMIN)
-        if ($user->role !== 'ADMIN' && $production->entity_id !== $user->entity_id) {
+        // Vérification ownership — seul l'ADMIN interne (guard "web") a un accès
+        // global. Le Store Admin est soumis au contrôle d'entité comme les autres.
+        if (!$this->hasGlobalEntityAccess() && $production->entity_id !== $entityId) {
             abort(403);
         }
 
@@ -373,9 +374,10 @@ class ProductionController extends Controller
      */
     public function destroy(Production $production)
     {
-        $user = Auth::user();
+        $entityId = $this->getCurrentEntityId();
 
-        if ($user->role !== 'ADMIN' && $production->entity_id !== $user->entity_id) {
+        // Ownership : accès global réservé à l'ADMIN interne (cf. update())
+        if (!$this->hasGlobalEntityAccess() && $production->entity_id !== $entityId) {
             abort(403);
         }
 
@@ -391,8 +393,8 @@ class ProductionController extends Controller
      */
     public function distribuer(Request $request)
     {
-        $user     = Auth::user();
-        $entityId = $user->entity_id;
+        $user     = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
         $date     = $request->input('date', now()->toDateString());
 
         // Récupérer toutes les productions du jour pour cette entité

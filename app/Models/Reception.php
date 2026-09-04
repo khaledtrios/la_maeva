@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToStore;
+use App\Models\Scopes\StoreScope;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -9,6 +11,19 @@ use Illuminate\Database\Eloquent\Model;
 
 class Reception extends Model
 {
+    use BelongsToStore;
+
+    /**
+     * PHASE 4 — ÉTAPE 5 (groupe 5/Logistique) : cloisonnement automatique.
+     * Une seule colonne entity_id (le destinataire) : store_id derive
+     * directement, aucune ambiguite. confirm() a deja un controle manuel (P0) ;
+     * le scope protege desormais aussi le binding lui-meme.
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new StoreScope());
+    }
+
     protected $fillable = ['expedition_id', 'entity_id', 'date', 'statut'];
 
     /**

@@ -2,11 +2,23 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToStore;
+use App\Models\Scopes\StoreScope;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Model;
 
 class HaccpControleReception extends Model
 {
+    use BelongsToStore;
+
+    /**
+     * PHASE 4 — ÉTAPE 5 (groupe 2/HACCP) : cloisonnement automatique.
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new StoreScope());
+    }
+
     protected $table = 'haccp_controles_reception';
 
     protected $fillable = ['entity_id', 'fournisseur', 'bl_number', 'categorie', 'temperature', 'conforme', 'commentaire', 'date', 'created_by'];

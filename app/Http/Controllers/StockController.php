@@ -20,8 +20,8 @@ class StockController extends Controller
      */
     public function index()
     {
-        $user = Auth::user();
-        $entityId = $user->entity_id;
+        $user = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
 
         // 1. Stock agrégé par produit (groupé par produit)
         // Récupérer d'abord tous les lots avec DLC pour calculer les métriques
@@ -170,8 +170,8 @@ class StockController extends Controller
      */
     public function adjust(Request $request)
     {
-        $user = Auth::user();
-        $this->authorizeRole(['RESP_BOUTIQUE', 'ADMIN']);
+        $user = $this->getCurrentUser();
+        $this->authorizeRole(['RESP_BOUTIQUE', 'ADMIN', 'STORE_ADMIN']);
 
         $validated = $request->validate([
             'product_id'      => ['required', 'integer', 'exists:products,id'],
@@ -180,7 +180,7 @@ class StockController extends Controller
             'lot_number'      => ['nullable', 'string', 'max:100'],
         ]);
 
-        $entityId = $user->entity_id;
+        $entityId = $this->getCurrentEntityId();
         $productId = $validated['product_id'];
         $delta = $validated['quantite_delta'];
         $raison = $validated['raison'];
@@ -255,8 +255,8 @@ class StockController extends Controller
      */
     public function movements(Request $request)
     {
-        $user = Auth::user();
-        $entityId = $user->entity_id;
+        $user = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
 
         $dateFrom = $request->query('date_from', now()->subDays(30)->toDateString());
         $dateTo = $request->query('date_to', now()->toDateString());

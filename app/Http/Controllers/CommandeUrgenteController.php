@@ -145,7 +145,10 @@ class CommandeUrgenteController extends Controller
     /**
      * Prendre en charge une commande (labo)
      */
-    public function take(int $id)
+    // NB: toutes ces routes sont déclarées sous /{slug} ; les paramètres de route
+    // sont injectés par POSITION, donc $slug doit être déclaré AVANT $id — sinon
+    // le slug arrive dans $id et lève un TypeError (erreur 500).
+    public function take(string $slug, int $id)
     {
         $user = Auth::user();
 
@@ -165,7 +168,7 @@ class CommandeUrgenteController extends Controller
     /**
      * Mettre à jour le statut d'une commande
      */
-    public function updateStatus(Request $request, int $id)
+    public function updateStatus(Request $request, string $slug, int $id)
     {
         $user = Auth::user();
 
@@ -191,7 +194,7 @@ class CommandeUrgenteController extends Controller
      * Pas de formulaire intermédiaire : les produits de la commande sont
      * automatiquement transférés dans le BL.
      */
-    public function createBl(int $commandeId)
+    public function createBl(string $slug, int $commandeId)
     {
         $user = Auth::user();
 
@@ -229,7 +232,7 @@ class CommandeUrgenteController extends Controller
     /**
      * Afficher le détail d'une commande urgente
      */
-    public function show(int $id)
+    public function show(string $slug, int $id)
     {
         $user = Auth::user();
 

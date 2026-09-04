@@ -15,13 +15,12 @@ uses(RefreshDatabase::class)->group('stores');
 
 // Helper pour créer un utilisateur interne (même pattern que CommandeUrgenteTest.php).
 $makeInternalUser = function (string $role) {
-    $entity = Entity::create([
-        'type' => 'LABO',
-        'nom' => 'Labo Test',
-        'adresse' => '123 rue Labo',
-    ]);
+    // `entities.store_id` est NOT NULL (vague 3a) : l'entité doit être rattachée
+    // à un store, donc le store est créé d'abord (cf. helper dans tests/Pest.php).
+    [$store, $entity] = creerStoreComplet('Store Interne ' . uniqid(), 'interne-' . uniqid());
 
     return User::create([
+        'store_id' => $store->id,
         'entity_id' => $entity->id,
         'nom' => 'Utilisateur Test',
         'pin' => User::hashPin('0000'),

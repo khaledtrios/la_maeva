@@ -19,8 +19,8 @@ class SaleController extends Controller
      */
     public function index(Request $request)
     {
-        $user = Auth::user();
-        $entityId = $user->entity_id;
+        $user = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
 
         $date = $request->query('date', now()->toDateString());
 
@@ -126,8 +126,8 @@ class SaleController extends Controller
      */
     public function store(Request $request)
     {
-        $user = Auth::user();
-        $entityId = $user->entity_id;
+        $user = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
 
         $date = $request->input('date', now()->toDateString());
 

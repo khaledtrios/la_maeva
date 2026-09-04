@@ -3,8 +3,10 @@
 namespace Database\Factories;
 
 use App\Enums\StoreStatus;
+use App\Models\Entity;
 use App\Models\Store;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
 /**
  * @extends Factory<Store>
@@ -23,14 +25,54 @@ class StoreFactory extends Factory
      */
     public function definition(): array
     {
+        $name = fake()->company();
+
         return [
-            'name' => fake()->company(),
+            'name' => $name,
+            // PHASE 3.5 (M4) : un slug était absent par défaut, alors que toutes
+            // les routes employé vivent sous /{slug} — les tests devaient le
+            // fournir à la main sous peine d'un store inatteignable.
+            'slug' => Str::slug($name) . '-' . fake()->unique()->numberBetween(1000, 999999),
             'phone' => fake()->phoneNumber(),
             'address' => fake()->streetAddress(),
             'city' => fake()->city(),
             'postal_code' => fake()->postcode(),
             'siret' => fake()->numerify('##############'),
         ];
+    }
+
+    /**
+     * Crée le store AVEC ses entités (1 LABO + 1 BOULANGERIE) rattachées, et
+     * renseigne `stores.entity_id` sur le labo.
+     *
+     * État explicite plutôt qu'automatique : les tests existants qui fournissent
+     * eux-mêmes `entity_id` gardent exactement le comportement précédent.
+     */
+    public function withEntities(): static
+    {
+        return $this->afterCreating(function (Store $store) {
+            $labo = Entity::create([
+                'type' => 'LABO',
+                'nom' => 'Labo ' . $store->name,
+                'adresse' => $store->address ?? 'Adresse labo',
+            ]);
+
+            $boulangerie = Entity::create([
+                'type' => 'BOULANGERIE',
+                'nom' => 'Boutique ' . $store->name,
+                'adresse' => $store->address ?? 'Adresse boutique',
+            ]);
+
+            // store_id est hors $fillable (anti-changement de tenant par
+            // assignation de masse) : affectation directe volontaire.
+            foreach ([$labo, $boulangerie] as $entity) {
+                $entity->store_id = $store->id;
+                $entity->save();
+            }
+
+            $store->entity_id = $labo->id;
+            $store->save();
+        });
     }
 
     /**

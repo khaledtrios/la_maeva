@@ -34,12 +34,30 @@ class SyncCaisseController extends Controller
 
     public function getEtab(Request $request)
     {
-        $etabs = Entity::select('id', 'nom', 'adresse')->get();
+        // Cloisonnement (C2) : cette route exposait la liste de TOUTES les
+        // entités de la plateforme. Elle ne renvoie plus que celles du store
+        // authentifié par son jeton d'API.
+        $etabs = Entity::select('id', 'nom', 'adresse')
+            ->where('store_id', $this->caisseStoreId($request))
+            ->get();
 
         return response()->json([
             'message' => 'Establishment data retrieved successfully',
             'etabs' => $etabs,
         ]);
+    }
+
+    /**
+     * Identifiant du store authentifié par le middleware `caisse.token`.
+     * Fail-closed : sans store résolu, la requête est rejetée.
+     */
+    private function caisseStoreId(Request $request): int
+    {
+        $store = $request->attributes->get('caisse_store');
+
+        abort_unless($store, 401, 'Boutique non authentifiée.');
+
+        return (int) $store->id;
     }
 
     /**
@@ -60,12 +78,25 @@ class SyncCaisseController extends Controller
             'produits.*.ncaisse' => 'nullable|array',
         ]);
 
-        $entityId = $validated['entity_id'];
+        $entityId = (int) $validated['entity_id'];
         $date = $validated['date'];
+
+        // CLOISONNEMENT (C2) : `exists:entities,id` ne garantissait que
+        // l'existence de l'entité, pas son appartenance. Une caisse pouvait donc
+        // écrire des ventes et consommer le stock de N'IMPORTE QUEL store. On
+        // vérifie ici que l'entité visée appartient bien au store authentifié.
+        $storeId = $this->caisseStoreId($request);
+
+        $entiteAutorisee = Entity::whereKey($entityId)->where('store_id', $storeId)->exists();
+
+        abort_unless($entiteAutorisee, 403, 'Cette entité n\'appartient pas à votre boutique.');
 
         // Charge une seule fois les produits + réceptions confirmées du jour,
         // pour éviter une requête par ligne caisse.
-        $produitsExistants = Product::select('id', 'nom')->get();
+        // Scopé au store : la correspondance par nom ne doit jamais pouvoir
+        // désigner le produit d'un autre store (les noms sont souvent identiques
+        // d'une boutique à l'autre : « Croissant », « Baguette »...).
+        $produitsExistants = Product::select('id', 'nom')->where('store_id', $storeId)->get();
 
         $receptionsLines = Reception::with('lines')
             ->whereHas('expedition', fn($q) => $q->where('boulangerie_id', $entityId))

@@ -1,12 +1,21 @@
 import { useState } from 'react';
 import { Link, useForm, usePage } from '@inertiajs/react';
-import { login } from '@/routes';
 import { register as storeRegister } from '@/routes/store';
 
+interface Store {
+    id: number;
+    name: string;
+    slug: string;
+    entity_name: string | null;
+}
+
+interface LoginProps {
+    store: Store;
+}
+
 export default function Login() {
-    const { errors } = usePage().props as any;
+    const { errors, store } = usePage().props as any as LoginProps;
     const form = useForm({
-        entity_id: '',
         pin: '',
     });
 
@@ -18,17 +27,12 @@ export default function Login() {
             setPinValue(newPin);
             form.setData('pin', newPin);
 
-            // Auto-submit dès que 4 digits + entity sélectionnée
-            if (newPin.length === 4 && form.data.entity_id) {
+            // Auto-submit dès que 4 digits
+            if (newPin.length === 4) {
                 // Petit délai pour permettre l'affichage du dernier dot
                 setTimeout(() => {
-                    console.log('Submitting login with:', {
-                        entity_id: form.data.entity_id,
-                        pin: newPin,
-                    });
-                    form.post(login.url(), {
+                    form.post(`/${store.slug}/login`, {
                         onError: () => {
-                            console.log('Login error:', errors.pin);
                             setPinValue('');
                         },
                     });
@@ -68,21 +72,21 @@ export default function Login() {
                 <p className="login-sub">Gestion Boulangerie &amp; HACCP</p>
                 <div className="login-divider" />
 
-                {/* Select établissement */}
+                {/* Store Info */}
                 <div style={{ marginBottom: '22px' }}>
-                    <label className="login-field-label">Établissement</label>
-                    <select
-                        value={form.data.entity_id}
-                        onChange={(e) => form.setData('entity_id', e.target.value)}
-                        className="login-entity-input"
-                        required
+                    <label className="login-field-label">Votre store</label>
+                    <div
+                        style={{
+                            padding: '12px 16px',
+                            background: 'var(--bg-card-2)',
+                            border: '1px solid var(--border)',
+                            borderRadius: '4px',
+                            fontWeight: 500,
+                            color: 'var(--text-1)',
+                        }}
                     >
-                        <option value="">— Choisir votre site —</option>
-                        <option value="1">1 · Labo Maéva Cayenne</option>
-                        <option value="2">2 · Maéva Cayenne</option>
-                        <option value="3">3 · Maéva Soula</option>
-                        <option value="4">4 · Mé Mo Toucho Cayenne</option>
-                    </select>
+                        {(store as Store).name}
+                    </div>
                 </div>
 
                 {/* PIN indicator (4 dots) */}

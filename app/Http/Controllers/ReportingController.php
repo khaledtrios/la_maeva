@@ -12,12 +12,23 @@ use Illuminate\Support\Facades\Auth;
 class ReportingController extends Controller
 {
     /**
-     * Page de reporting — accessible ADMIN + DIRECTION
+     * Page de reporting.
+     *
+     * Cloisonnement multi-tenant :
+     *  - Admin interne / Direction (guard "web", route protégée par
+     *    role:ADMIN,DIRECTION) : reporting consolidé de toutes les boulangeries.
+     *  - Store Admin (guard "store") : uniquement les données de SON entité.
+     *    Fail-closed — un store sans entité rattachée ne voit aucune donnée.
      */
     public function index()
     {
-        // Récupérer toutes les ventes avec produits
-        $ventes = VenteJour::with('product')->get();
+        $isScoped = $this->isStoreAdmin();
+        $scopedEntityId = $isScoped ? $this->getCurrentEntityId() : null;
+
+        // Ventes : filtrées sur l'entité du store pour un Store Admin
+        $ventes = VenteJour::with('product')
+            ->when($isScoped, fn ($q) => $q->where('entity_id', $scopedEntityId))
+            ->get();
 
         // Calculs globaux
         $caTotal = 0;
@@ -37,8 +48,10 @@ class ReportingController extends Controller
         $totalReste = $ventes->sum('qte_reste');
         $tauxInvendus = $totalRecu > 0 ? round(($totalReste / $totalRecu) * 100, 2) : 0;
 
-        // Par boulangerie
-        $boulangeries = Entity::where('type', 'BOULANGERIE')->get();
+        // Par boulangerie — le Store Admin ne voit que la sienne
+        $boulangeries = Entity::where('type', 'BOULANGERIE')
+            ->when($isScoped, fn ($q) => $q->where('id', $scopedEntityId))
+            ->get();
         $byBoulangerie = [];
 
         foreach ($boulangeries as $b) {

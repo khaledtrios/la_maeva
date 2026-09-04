@@ -85,7 +85,7 @@ return [
 
         'store_users' => [
             'driver' => 'eloquent',
-            'model' => User::class,
+            'model' => \App\Models\StoreUser::class,
         ],
 
         'super_admins' => [

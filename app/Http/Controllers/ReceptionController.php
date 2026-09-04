@@ -18,8 +18,8 @@ class ReceptionController extends Controller
      */
     public function index()
     {
-        $user = Auth::user();
-        $entityId = $user->entity_id;
+        $user = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
 
         // Réceptions en attente
         $enAttente = Reception::with([

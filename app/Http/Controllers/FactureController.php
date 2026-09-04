@@ -25,7 +25,8 @@ class FactureController extends Controller
      */
     public function index(Request $request)
     {
-        $user = Auth::user();
+        $user = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
         $query = Facture::with([
             'entity',
             'boulangerie',
@@ -37,11 +38,11 @@ class FactureController extends Controller
 
         // Filtrage par rôle
         if ($user->role === 'RESP_LABO') {
-            $query->where('entity_id', $user->entity_id);
-        } elseif (in_array($user->role, ['RESP_BOUTIQUE', 'EMPLOYE_VENTE'])) {
-            $query->where('boulangerie_id', $user->entity_id);
-            // Les boutiques ne peuvent pas filtrer par une autre boutique
-            $request->merge(['boulangerie_id' => $user->entity_id]);
+            $query->where('entity_id', $entityId);
+        } elseif (in_array($user->role, ['RESP_BOUTIQUE', 'EMPLOYE_VENTE', 'STORE_ADMIN'])) {
+            $query->where('boulangerie_id', $entityId);
+            // Les boutiques et Store Admin ne peuvent pas filtrer par une autre entité
+            $request->merge(['boulangerie_id' => $entityId]);
         }
         // ADMIN voit tout
 
@@ -91,8 +92,17 @@ class FactureController extends Controller
      */
     public function create(Request $request)
     {
-        $boutiques = Entity::where('type', 'BOULANGERIE')->orderBy('nom')->get(['id', 'nom']);
-        $labos = Entity::where('type', 'LABO')->orderBy('nom')->get(['id', 'nom']);
+        // Cloisonnement multi-tenant : un Store Admin ne doit pas découvrir les
+        // entités des autres stores — il ne voit que la sienne.
+        $isScoped = $this->isStoreAdmin();
+        $scopedEntityId = $isScoped ? $this->getCurrentEntityId() : null;
+
+        $boutiques = Entity::where('type', 'BOULANGERIE')
+            ->when($isScoped, fn ($q) => $q->where('id', $scopedEntityId))
+            ->orderBy('nom')->get(['id', 'nom']);
+        $labos = Entity::where('type', 'LABO')
+            ->when($isScoped, fn ($q) => $q->where('id', $scopedEntityId))
+            ->orderBy('nom')->get(['id', 'nom']);
 
         return Inertia::render('Factures/Create', [
             'boutiques'    => $boutiques,
@@ -115,6 +125,17 @@ class FactureController extends Controller
             'notes'          => ['nullable', 'string'],
         ]);
 
+        // Cloisonnement multi-tenant : un Store Admin ne peut générer une facture
+        // qu'impliquant SA propre entité (émettrice ou destinataire). Sans ce
+        // contrôle, `exists:entities,id` laisse facturer pour le compte d'un tiers.
+        if ($this->isStoreAdmin()) {
+            $entityId = $this->getCurrentEntityId();
+
+            if ((int) $request->boulangerie_id !== $entityId && (int) $request->entity_id !== $entityId) {
+                abort(403, 'Vous ne pouvez générer une facture que pour votre propre entité.');
+            }
+        }
+
         try {
             $boulangerie = Entity::findOrFail($request->boulangerie_id);
             $labo = Entity::findOrFail($request->entity_id);
@@ -125,7 +146,7 @@ class FactureController extends Controller
                 $request->periode_type,
                 $request->date_debut,
                 $request->date_fin,
-                Auth::user(),
+                $this->getCurrentUser(),
                 false // manuel
             );
 
@@ -208,7 +229,7 @@ class FactureController extends Controller
 
         $facture->update([
             'statut'        => 'EMISE',
-            'validated_by'  => Auth::id(),
+            'validated_by'  => $this->getCurrentUser()->id,
         ]);
 
         return back()->with('success', "Facture {$facture->numero} émise.");
@@ -219,15 +240,19 @@ class FactureController extends Controller
      */
     public function pay(Request $request, Facture $facture)
     {
-        if (!in_array(Auth::user()->role, ['ADMIN', 'RESP_LABO'])) {
+        $user = $this->getCurrentUser();
+        if (!in_array($user->role, ['ADMIN', 'RESP_LABO', 'STORE_ADMIN'])) {
             return back()->withErrors(['error' => 'Action non autorisée.']);
         }
+
+        // Cloisonnement : interdit d'agir sur la facture d'une autre entité/store
+        $this->authorizeView($facture);
 
         if (!in_array($facture->statut, ['BROUILLON', 'EMISE'])) {
             return back()->withErrors(['error' => 'Seules les factures en brouillon ou émise peuvent être marquées payées.']);
         }
 
-        $this->service->marquerPayee($facture, Auth::user());
+        $this->service->marquerPayee($facture, $user);
 
         return back()->with('success', "Facture {$facture->numero} marquée comme payée.");
     }
@@ -237,13 +262,17 @@ class FactureController extends Controller
      */
     public function cancel(Request $request, Facture $facture)
     {
-        if (!in_array(Auth::user()->role, ['ADMIN', 'RESP_LABO'])) {
+        $user = $this->getCurrentUser();
+        if (!in_array($user->role, ['ADMIN', 'RESP_LABO', 'STORE_ADMIN'])) {
             return back()->withErrors(['error' => 'Action non autorisée.']);
         }
 
+        // Cloisonnement : interdit d'annuler la facture d'une autre entité/store
+        $this->authorizeView($facture);
+
         $request->validate(['raison' => ['required', 'string']]);
 
-        $avoir = $this->service->annulerFacture($facture, Auth::user(), $request->raison);
+        $avoir = $this->service->annulerFacture($facture, $user, $request->raison);
 
         return redirect()->route('factures.show', $avoir)
             ->with('success', "Facture {$facture->numero} annulée. Avoir généré : {$avoir->numero}.");
@@ -254,6 +283,16 @@ class FactureController extends Controller
      */
     public function destroy(Facture $facture)
     {
+        // Cette action n'avait AUCUN contrôle : ni rôle, ni appartenance. Un
+        // compte du guard "store" pouvait supprimer le brouillon de n'importe
+        // quel store en itérant l'id d'URL.
+        $user = $this->getCurrentUser();
+        if (!in_array($user->role, ['ADMIN', 'RESP_LABO', 'STORE_ADMIN'])) {
+            return back()->withErrors(['error' => 'Action non autorisée.']);
+        }
+
+        $this->authorizeView($facture);
+
         if ($facture->statut !== 'BROUILLON') {
             return back()->withErrors(['error' => 'Seules les factures en brouillon peuvent être supprimées.']);
         }
@@ -273,10 +312,11 @@ class FactureController extends Controller
             abort(404);
         }
 
-        $user = Auth::user();
+        $user = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
 
-        // Autorisation : boutiques ne voient que leurs propres factures
-        if (in_array($user->role, ['RESP_BOUTIQUE', 'EMPLOYE_VENTE']) && $boutique->id !== $user->entity_id) {
+        // Autorisation : boutiques et Store Admin ne voient que leurs propres factures
+        if (in_array($user->role, ['RESP_BOUTIQUE', 'EMPLOYE_VENTE', 'STORE_ADMIN']) && $boutique->id !== $entityId) {
             abort(403, 'Accès non autorisé à cette boutique.');
         }
 
@@ -300,20 +340,22 @@ class FactureController extends Controller
      */
     private function authorizeView(Facture $facture): void
     {
-        $user = Auth::user();
+        $user = $this->getCurrentUser();
+        $entityId = $this->getCurrentEntityId();
 
-        // ADMIN voit tout
-        if ($user->role === 'ADMIN') {
+        // Accès global : ADMIN interne (guard "web") uniquement — jamais un
+        // Store Admin, qui reste cloisonné à son entité.
+        if ($this->hasGlobalEntityAccess()) {
             return;
         }
 
         // RESP_LABO : factures de son labo
-        if ($user->role === 'RESP_LABO' && $facture->entity_id === $user->entity_id) {
+        if ($user->role === 'RESP_LABO' && $facture->entity_id === $entityId) {
             return;
         }
 
-        // Boutique : factures qui lui sont destinées
-        if (in_array($user->role, ['RESP_BOUTIQUE', 'EMPLOYE_VENTE']) && $facture->boulangerie_id === $user->entity_id) {
+        // Boutique et Store Admin : factures qui leur sont destinées
+        if (in_array($user->role, ['RESP_BOUTIQUE', 'EMPLOYE_VENTE', 'STORE_ADMIN']) && $facture->boulangerie_id === $entityId) {
             return;
         }
 

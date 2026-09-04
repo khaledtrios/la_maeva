@@ -38,6 +38,20 @@ class FactureService
         ?User $generator = null,
         bool $auto = false
     ): Facture {
+        // Garde-fou (correctif P0, audit final multi-tenant, 2026-09-04) :
+        // empêche toute création cross-store, quel que soit l'appelant. Avant
+        // ce correctif, rien dans le service ne revérifiait que le labo
+        // émetteur et la boulangerie destinataire appartiennent au même store
+        // — seuls certains contrôleurs le faisaient, et jamais pour le rôle
+        // ADMIN interne (dont `Entity::find()` n'est pas cloisonné). Ce garde
+        // protège aussi les appels non-HTTP (job `FactureAutoGenerator`).
+        if ($labo->store_id !== $boulangerie->store_id) {
+            throw new \Exception(
+                "Incohérence multi-tenant : le labo (store #{$labo->store_id}) et la boulangerie "
+                . "(store #{$boulangerie->store_id}) n'appartiennent pas au même store."
+            );
+        }
+
         return DB::transaction(function () use (
             $boulangerie,
             $labo,

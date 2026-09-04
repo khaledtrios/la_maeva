@@ -20,6 +20,11 @@ class HaccpControleReceptionSeeder extends Seeder
         $fournisseurs = ['Fournisseur A', 'Fournisseur B', 'Fournisseur C'];
         $users = User::whereIn('role', ['RESP_BOUTIQUE', 'EMPLOYE_VENTE'])->pluck('id')->toArray();
 
+        // Skip if no bakeries (boutiques)
+        if ($entities->isEmpty() || $users->isEmpty()) {
+            return;
+        }
+
         // 10 contrôles sur les 7 derniers jours, répartis
         for ($i = 0; $i < 10; $i++) {
             $entity = $entities->random();

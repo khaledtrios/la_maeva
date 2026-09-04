@@ -13,14 +13,17 @@ class UserSeeder extends Seeder
      */
     public function run(): void
     {
-        // entity:1 — Admin Dupont — ADMIN
+        // entity:1 — Admin Dupont — ADMIN (authentification email + password via /store/login)
         User::create([
             'id' => 1,
             'entity_id' => 1,
             'nom' => 'Admin Dupont',
-            'pin' => User::hashPin('0000'),
+            'pin' => User::hashPin('0000'),  // Gardé pour compatibilité, mais non utilisé
             'role' => 'ADMIN',
             'active' => true,
+            'auth_type' => 'EMAIL_PASSWORD',
+            'email' => 'bhhamzahb@gmail.com',
+            'password' => bcrypt('password'),
         ]);
 
         // entity:1 — Chef Labo Martin — RESP_LABO
@@ -31,6 +34,7 @@ class UserSeeder extends Seeder
             'pin' => User::hashPin('1111'),
             'role' => 'RESP_LABO',
             'active' => true,
+            'auth_type' => 'PIN',
         ]);
 
         // entity:1 — Pierre Labeur — EMPLOYE_LABO
@@ -41,6 +45,7 @@ class UserSeeder extends Seeder
             'pin' => User::hashPin('2222'),
             'role' => 'EMPLOYE_LABO',
             'active' => true,
+            'auth_type' => 'PIN',
         ]);
 
         // entity:2 — Sophie Cayenne — RESP_BOUTIQUE
@@ -51,6 +56,7 @@ class UserSeeder extends Seeder
             'pin' => User::hashPin('3333'),
             'role' => 'RESP_BOUTIQUE',
             'active' => true,
+            'auth_type' => 'PIN',
         ]);
 
         // entity:2 — Marie Caisse — EMPLOYE_VENTE
@@ -61,6 +67,7 @@ class UserSeeder extends Seeder
             'pin' => User::hashPin('4444'),
             'role' => 'EMPLOYE_VENTE',
             'active' => true,
+            'auth_type' => 'PIN',
         ]);
 
         // entity:3 — Jean Soula — RESP_BOUTIQUE
@@ -71,6 +78,7 @@ class UserSeeder extends Seeder
             'pin' => User::hashPin('5555'),
             'role' => 'RESP_BOUTIQUE',
             'active' => true,
+            'auth_type' => 'PIN',
         ]);
 
         // entity:4 — Claire Mé Mo — RESP_BOUTIQUE
@@ -81,6 +89,7 @@ class UserSeeder extends Seeder
             'pin' => User::hashPin('7777'),
             'role' => 'RESP_BOUTIQUE',
             'active' => true,
+            'auth_type' => 'PIN',
         ]);
 
         // entity:1 — Dir. Legrand — DIRECTION
@@ -91,16 +100,7 @@ class UserSeeder extends Seeder
             'pin' => User::hashPin('6666'),
             'role' => 'DIRECTION',
             'active' => true,
-        ]);
-
-        // entity:1 — Système — SYSTEM (pour génération auto factures)
-        User::create([
-            'id' => 9,
-            'entity_id' => 1,
-            'nom' => 'Système',
-            'pin' => User::hashPin('0000'),
-            'role' => 'SYSTEM',
-            'active' => true,
+            'auth_type' => 'PIN',
         ]);
     }
 }

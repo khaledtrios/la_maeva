@@ -30,7 +30,7 @@ class ReturnController extends Controller
 
     public function index(Request $request)
     {
-        $user = Auth::user();
+        $user = $this->getCurrentUser();
         $query = ProductReturn::with([
             'entity',
             'laboEntity',
@@ -45,10 +45,11 @@ class ReturnController extends Controller
         switch ($user->role) {
             case 'RESP_BOUTIQUE':
             case 'EMPLOYE_VENTE':
-                $query->where('entity_id', $user->entity_id);
+            case 'STORE_ADMIN':
+                $query->where('entity_id', $this->getCurrentEntityId());
                 break;
             case 'RESP_LABO':
-                $query->where('labo_entity_id', $user->entity_id)
+                $query->where('labo_entity_id', $this->getCurrentEntityId())
                     ->where('status', '!=', 'BROUILLON'); // Le labo ne voit pas les brouillons
                 break;
         }
@@ -75,6 +76,11 @@ class ReturnController extends Controller
                 'DEFECTUEUX'     => 'Défectueux',
                 'INVENDU_EXPIRE' => 'Invendu (DLC expirée)',
             ],
+            // STORE_ADMIN retiré : create() et store() (comme canView()) ne
+            // l'autorisent pas -> le bouton menait à un 403. On masque plutôt que
+            // d'élargir les droits. DÉCISION MÉTIER EN ATTENTE : si le Store Admin
+            // doit pouvoir créer/consulter ses retours, l'ajouter dans create(),
+            // store() et canView() (le scoping entity_id de index() est déjà bon).
             'canCreate'  => in_array($user->role, ['RESP_BOUTIQUE', 'EMPLOYE_VENTE', 'ADMIN']),
             'canConfirm' => in_array($user->role, ['ADMIN', 'RESP_LABO']),
             'canProcess' => in_array($user->role, ['ADMIN', 'RESP_LABO']),

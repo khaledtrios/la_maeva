@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo } from 'react';
 import { useForm, router } from '@inertiajs/react';
 import { useAuth } from '@/hooks/useAuth';
+import { useRouteWithSlug } from '@/utils/routeWithSlug';
 import {
     Building,
     UserPlus,
@@ -64,8 +65,13 @@ export default function AdminIndex({
     facture_settings,
 }: AdminIndexProps) {
     const { hasRole } = useAuth();
+    // Store Admin (guard "store") : espace cloisonné à son store. On masque les
+    // entités globales et la facturation, et on poste vers /store/admin/* (l'Admin
+    // interne poste vers /admin/*, le slug étant rajouté par l'intercepteur d'app.tsx).
+    const isStoreAdmin = hasRole('STORE_ADMIN');
+    const adminBase = isStoreAdmin ? '/store/admin' : '/admin';
     const [activeTab, setActiveTab] = useState<'entities' | 'users' | 'facturation'>(
-        'entities',
+        isStoreAdmin ? 'users' : 'entities',
     );
     const [entities, setEntities] = useState(initialEntities);
     const [users, setUsers] = useState(initialUsers);
@@ -127,7 +133,7 @@ export default function AdminIndex({
             entityForm.put(
                 editingEntity.id === 0
                     ? ''
-                    : `/admin/entities/${editingEntity.id}`,
+                    : `${adminBase}/entities/${editingEntity.id}`,
                 {
                     onSuccess: (page: any) => {
                         setEntities(page.props.entities);
@@ -136,7 +142,7 @@ export default function AdminIndex({
                 },
             );
         } else {
-            entityForm.post('/admin/entities', {
+            entityForm.post(`${adminBase}/entities`, {
                 onSuccess: (page: any) => {
                     setEntities(page.props.entities);
                     setEntityModalOpen(false);
@@ -151,7 +157,7 @@ export default function AdminIndex({
         setLogoUploading(true);
         const formData = new FormData();
         formData.append('logo', file);
-        router.post(`/admin/entities/${logoModalEntity.id}/logo`, formData, {
+        router.post(`${adminBase}/entities/${logoModalEntity.id}/logo`, formData, {
             forceFormData: true,
             onSuccess: (page: any) => {
                 setEntities(page.props.entities);
@@ -164,7 +170,7 @@ export default function AdminIndex({
 
     const handleLogoDelete = (entity: (typeof initialEntities)[0]) => {
         if (!confirm(`Supprimer le logo de « ${entity.nom} » ?`)) return;
-        router.delete(`/admin/entities/${entity.id}/logo`, {
+        router.delete(`${adminBase}/entities/${entity.id}/logo`, {
             onSuccess: (page: any) => setEntities(page.props.entities),
         });
     };
@@ -190,8 +196,8 @@ export default function AdminIndex({
 
     const submitUser = () => {
         const url = editingUser
-            ? `/admin/users/${editingUser.id}`
-            : '/admin/users';
+            ? `${adminBase}/users/${editingUser.id}`
+            : `${adminBase}/users`;
         const method = editingUser ? 'put' : 'post';
         userForm[method](url, {
             onSuccess: (page: any) => {
@@ -216,39 +222,43 @@ export default function AdminIndex({
                     </p>
                 </div>
                 <div className="header-actions">
-                    <button
-                        className="btn-secondary"
-                        onClick={() => {
-                            if (confirm('Recalculer les coûts de revient de tous les produits ? Cela peut prendre quelques secondes.')) {
-                                router.post('/admin/products/recalc-costs', {
-                                    onSuccess: () => {
-                                        alert('Coûts recalculés avec succès !');
-                                    },
-                                    onError: () => {
-                                        alert('Erreur lors du recalcul.');
-                                    },
-                                });
-                            }
-                        }}
-                        title="Recalculer automatiquement les coûts de revient (basé sur les prix des ingrédients)"
-                    >
-                        <RefreshCw size={16} strokeWidth={1.5} />
-                        <span>Recalculer coûts</span>
-                    </button>
+                    {!isStoreAdmin && (
+                        <button
+                            className="btn-secondary"
+                            onClick={() => {
+                                if (confirm('Recalculer les coûts de revient de tous les produits ? Cela peut prendre quelques secondes.')) {
+                                    router.post(`${adminBase}/products/recalc-costs`, {}, {
+                                        onSuccess: () => {
+                                            alert('Coûts recalculés avec succès !');
+                                        },
+                                        onError: () => {
+                                            alert('Erreur lors du recalcul.');
+                                        },
+                                    });
+                                }
+                            }}
+                            title="Recalculer automatiquement les coûts de revient (basé sur les prix des ingrédients)"
+                        >
+                            <RefreshCw size={16} strokeWidth={1.5} />
+                            <span>Recalculer coûts</span>
+                        </button>
+                    )}
                 </div>
             </div>
 
             {/* ── STATS CARDS ── */}
             <div className="stats-grid">
-                <div className="stat-card">
-                    <div className="stat-icon stat-icon--orange">
-                        <Building size={22} strokeWidth={1.5} />
+                {!isStoreAdmin && (
+                    <div className="stat-card">
+                        <div className="stat-icon stat-icon--orange">
+                            <Building size={22} strokeWidth={1.5} />
+                        </div>
+                        <div className="stat-content">
+                            <div className="stat-label">Entités</div>
+                            <div className="stat-value">{totalEntities}</div>
+                        </div>
                     </div>
-                    <div className="stat-content">
-                        <div className="stat-label">Entités</div>
-                        <div className="stat-value">{totalEntities}</div>
-                    </div>
-                </div>
+                )}
                 <div className="stat-card">
                     <div className="stat-icon stat-icon--success">
                         <Users size={22} strokeWidth={1.5} />
@@ -282,13 +292,15 @@ export default function AdminIndex({
 
             {/* ── TABS ── */}
             <div className="tabs">
-                <button
-                    className={`tab-btn ${activeTab === 'entities' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('entities')}
-                >
-                    <Building size={16} strokeWidth={1.5} />
-                    Entités
-                </button>
+                {!isStoreAdmin && (
+                    <button
+                        className={`tab-btn ${activeTab === 'entities' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('entities')}
+                    >
+                        <Building size={16} strokeWidth={1.5} />
+                        Entités
+                    </button>
+                )}
                 <button
                     className={`tab-btn ${activeTab === 'users' ? 'active' : ''}`}
                     onClick={() => setActiveTab('users')}
@@ -296,13 +308,15 @@ export default function AdminIndex({
                     <Users size={16} strokeWidth={1.5} />
                     Utilisateurs
                 </button>
-                <button
-                    className={`tab-btn ${activeTab === 'facturation' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('facturation')}
-                >
-                    <FileText size={16} strokeWidth={1.5} />
-                    Facturation
-                </button>
+                {!isStoreAdmin && (
+                    <button
+                        className={`tab-btn ${activeTab === 'facturation' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('facturation')}
+                    >
+                        <FileText size={16} strokeWidth={1.5} />
+                        Facturation
+                    </button>
+                )}
             </div>
 
             {/* ── ONGLET ENTITÉS ── */}
@@ -741,7 +755,7 @@ export default function AdminIndex({
             )}
 
             {/* ── ONGLET FACTURATION ── */}
-            {activeTab === 'facturation' && facture_settings && (
+            {!isStoreAdmin && activeTab === 'facturation' && facture_settings && (
                 <FactureSettings
                     auto_generation_enabled={facture_settings.auto_generation_enabled}
                     description={facture_settings.description}
@@ -961,35 +975,65 @@ export default function AdminIndex({
                                         placeholder="Prénom Nom"
                                     />
                                 </div>
-                                <div className="form-group">
-                                    <label className="form-label">
-                                        Entité{' '}
-                                        <span className="text-orange">*</span>
-                                    </label>
-                                    <select
-                                        value={userForm.data.entity_id}
-                                        onChange={(e) =>
-                                            userForm.setData(
-                                                'entity_id',
-                                                e.target.value,
-                                            )
-                                        }
-                                        className="form-select"
-                                    >
-                                        <option value="">
-                                            Sélectionner une entité…
-                                        </option>
-                                        {entities.map((e) => (
-                                            <option key={e.id} value={e.id}>
-                                                {e.nom} (
-                                                {e.type === 'LABO'
-                                                    ? 'Laboratoire'
-                                                    : 'Boulangerie'}
+                                {!isStoreAdmin && (
+                                    <div className="form-group">
+                                        <label className="form-label">
+                                            Entité{' '}
+                                            <span className="text-orange">*</span>
+                                        </label>
+                                        <select
+                                            value={userForm.data.entity_id}
+                                            onChange={(e) =>
+                                                userForm.setData(
+                                                    'entity_id',
+                                                    e.target.value,
                                                 )
+                                            }
+                                            className="form-select"
+                                        >
+                                            <option value="">
+                                                Sélectionner une entité…
                                             </option>
-                                        ))}
-                                    </select>
-                                </div>
+                                            {entities.map((e) => (
+                                                <option key={e.id} value={e.id}>
+                                                    {e.nom} (
+                                                    {e.type === 'LABO'
+                                                        ? 'Laboratoire'
+                                                        : 'Boulangerie'}
+                                                    )
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+                                {isStoreAdmin && (
+                                    <div className="form-group">
+                                        <label className="form-label">
+                                            Entité{' '}
+                                            <span className="text-orange">*</span>
+                                        </label>
+                                        <div
+                                            style={{
+                                                padding: '0.75rem',
+                                                background: 'var(--bg-card-2)',
+                                                border: '1px solid var(--border)',
+                                                borderRadius: '4px',
+                                                color: 'var(--text-2)',
+                                            }}
+                                        >
+                                            {entities[0]?.nom || 'Votre entité'}
+                                        </div>
+                                        <p
+                                            style={{
+                                                fontSize: '0.75rem',
+                                                color: 'var(--text-3)',
+                                                marginTop: '0.5rem',
+                                            }}
+                                        >
+                                            Automatiquement assignée à votre store
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                             <div className="form-row">
                                 <div className="form-group">
@@ -1007,12 +1051,20 @@ export default function AdminIndex({
                                         }
                                         className="form-select"
                                     >
-                                        <option value="ADMIN">
-                                            Administrateur
-                                        </option>
-                                        <option value="DIRECTION">
-                                            Direction
-                                        </option>
+                                        {/* ADMIN et DIRECTION sont réservés à
+                                            l'admin interne : le backend les
+                                            refuse pour un Store Admin, on ne les
+                                            propose donc pas. */}
+                                        {!isStoreAdmin && (
+                                            <>
+                                                <option value="ADMIN">
+                                                    Administrateur
+                                                </option>
+                                                <option value="DIRECTION">
+                                                    Direction
+                                                </option>
+                                            </>
+                                        )}
                                         <option value="RESP_LABO">
                                             Responsable Laboratoire
                                         </option>
@@ -1168,7 +1220,7 @@ export default function AdminIndex({
                             <button
                                 onClick={() =>
                                     router.delete(
-                                        `/admin/entities/${deleteEntity.id}`,
+                                        `${adminBase}/entities/${deleteEntity.id}`,
                                     )
                                 }
                                 className="btn-danger"
@@ -1231,7 +1283,7 @@ export default function AdminIndex({
                             <button
                                 onClick={() =>
                                     router.delete(
-                                        `/admin/users/${deleteUser.id}`,
+                                        `${adminBase}/users/${deleteUser.id}`,
                                     )
                                 }
                                 className="btn-danger"

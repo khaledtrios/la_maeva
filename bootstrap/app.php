@@ -1,9 +1,14 @@
 <?php
 
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\AuthenticateCaisseToken;
 use App\Http\Middleware\CheckRole;
+use App\Http\Middleware\EnsureSlugMatchesStore;
 use App\Http\Middleware\EnsureStoreIsActive;
 use App\Http\Middleware\StoreGuardMiddleware;
+use App\Http\Middleware\ShareSlugWithInertia;
+use App\Http\Middleware\SetSessionCookiePerArea;
+use App\Enums\StoreStatus;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -18,8 +23,15 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // DOIT s'exécuter avant StartSession : choisit le cookie de session
+        // selon la zone (/super-admin, /store, employé) pour isoler les sessions.
+        $middleware->web(prepend: [
+            SetSessionCookiePerArea::class,
+        ]);
+
         $middleware->web(append: [
             HandleInertiaRequests::class,
+            ShareSlugWithInertia::class,
             AddLinkHeadersForPreloadedAssets::class,
         ]);
 
@@ -28,6 +40,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => CheckRole::class,
             'store.active' => EnsureStoreIsActive::class,
             'store.guard' => StoreGuardMiddleware::class,
+            // Vérifie que le slug de l'URL correspond au store de l'employé
+            'slug.store' => EnsureSlugMatchesStore::class,
+            // Authentifie l'intégration caisse par le jeton d'API de son store
+            'caisse.token' => AuthenticateCaisseToken::class,
         ]);
 
         // Redirections conscientes du guard : les routes store.* (ou /store/*, ou /register)
@@ -53,7 +69,19 @@ return Application::configure(basePath: dirname(__DIR__))
                 return route('superadmin.login');
             }
 
-            return $isStoreContext($request) ? route('store.login') : route('login');
+            if ($isStoreContext($request)) {
+                return route('store.login');
+            }
+
+            // Pour les employés, obtenir le slug du paramètre de route ou rediriger vers la page de login générique
+            $slug = $request->route('slug');
+            if ($slug) {
+                return "/{$slug}/login";
+            }
+            // Fallback : rediriger vers la première boutique disponible
+            $defaultSlug = \App\Models\Store::where('status', StoreStatus::Active)
+                ->first()?->slug ?? 'labo-maeva-cayenne-store';
+            return "/{$defaultSlug}/login";
         });
 
         $middleware->redirectUsersTo(function ($request) use ($isStoreContext, $isSuperAdminContext) {
@@ -61,7 +89,17 @@ return Application::configure(basePath: dirname(__DIR__))
                 return route('superadmin.stores.index');
             }
 
-            return $isStoreContext($request) ? route('store.dashboard') : route('dashboard');
+            if ($isStoreContext($request)) {
+                return route('store.dashboard');
+            }
+
+            // Pour les employés, rediriger vers le dashboard avec le slug
+            $slug = $request->session()->get('store_slug');
+            if ($slug) {
+                return "/{$slug}/dashboard";
+            }
+            // Fallback
+            return '/labo-maeva-cayenne-store/dashboard';
         });
     })
     ->withExceptions(function (Exceptions $exceptions): void {

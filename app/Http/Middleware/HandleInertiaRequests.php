@@ -39,14 +39,14 @@ class HandleInertiaRequests extends Middleware
         $user = null;
 
         if ($request->user('store')) {
-            // Store Admin - User transformé avec auth_type=EMAIL_PASSWORD
+            // Store Admin
             $storeUser = $request->user('store');
             $store = $storeUser->store()->with('entity')->first();
 
             $user = [
                 'id' => $storeUser->id,
-                'nom' => $storeUser->nom,
-                'role' => 'ADMIN', // Store Admin = ADMIN
+                'nom' => $storeUser->name,
+                'role' => 'STORE_ADMIN',
                 'entity_id' => $store?->entity_id,
                 'entity' => $store && $store->entity ? [
                     'id' => $store->entity->id,

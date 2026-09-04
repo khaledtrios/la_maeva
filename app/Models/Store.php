@@ -25,6 +25,7 @@ class Store extends Model
      */
     protected $fillable = [
         'name',
+        'slug',
         'phone',
         'address',
         'city',
@@ -68,11 +69,35 @@ class Store extends Model
     }
 
     /**
-     * Relation: l'entité associée à ce store (pour l'accès au CRM)
+     * Relation: l'entité PRINCIPALE de ce store (son labo), via stores.entity_id.
+     *
+     * Conservée telle quelle : tout le CRM actuel en dépend. Pour l'ensemble des
+     * entités possédées par le store (labo + points de vente), voir entities().
      */
     public function entity(): BelongsTo
     {
         return $this->belongsTo(Entity::class);
+    }
+
+    /**
+     * Relation: TOUTES les entités appartenant à ce store, via entities.store_id.
+     *
+     * Phase 1 du multi-tenant : un store peut posséder plusieurs entités (son
+     * labo et ses points de vente). C'est la relation à utiliser pour cloisonner
+     * les données métier, `entity()` ne désignant que l'entité principale.
+     */
+    public function entities(): HasMany
+    {
+        return $this->hasMany(Entity::class);
+    }
+
+    /**
+     * Les identifiants d'entités du store — frontière de cloisonnement à utiliser
+     * dans les requêtes métier : ->whereIn('entity_id', $store->entityIds()).
+     */
+    public function entityIds(): array
+    {
+        return $this->entities()->pluck('id')->all();
     }
 
     /**

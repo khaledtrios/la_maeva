@@ -21,8 +21,8 @@ class InventoryController extends Controller
      */
     public function index()
     {
-        $user       = Auth::user();
-        $entityId   = $user->entity_id;
+        $user       = $this->getCurrentUser();
+        $entityId   = $this->getCurrentEntityId();
         $entity     = Entity::findOrFail($entityId);
 
         // 1. Récupérer les seuils depuis ingredient_thresholds

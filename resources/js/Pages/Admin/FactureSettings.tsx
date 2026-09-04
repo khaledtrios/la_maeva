@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { router, usePage } from '@inertiajs/react'
+import { router } from '@inertiajs/react'
 
 export default function FactureSettings({
   auto_generation_enabled,
@@ -8,6 +8,7 @@ export default function FactureSettings({
   auto_generation_enabled: boolean
   description?: string
 }) {
+  // Onglet Facturation réservé à l'Admin interne (guard web).
   const [enabled, setEnabled] = useState(auto_generation_enabled)
 
   const handleToggle = () => {

@@ -3,6 +3,7 @@
 
 export type Role =
     | 'ADMIN'
+    | 'STORE_ADMIN'
     | 'DIRECTION'
     | 'RESP_LABO'
     | 'EMPLOYE_LABO'

@@ -2,11 +2,25 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToStore;
+use App\Models\Scopes\StoreScope;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Model;
 
 class StockMovement extends Model
 {
+    use BelongsToStore;
+
+    /**
+     * PHASE 4 — ÉTAPE 5 (groupe 3/Stocks) : cloisonnement automatique.
+     * StockController/StockMovementController filtrent deja par entity_id
+     * (defense en profondeur ici).
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new StoreScope());
+    }
+
     /**
      * Les attributs mass-assignables.
      * ingredient_id OU product_id selon le type de mouvement (ingrédient vs produit fini)

@@ -18,6 +18,20 @@ interface RecipeLineForm {
     quantite: string;
 }
 
+// Les visites Inertia sont préfixées automatiquement (slug du store ou /store)
+// par l'intercepteur de app.tsx, mais PAS un `fetch` natif : on construit donc
+// ici le préfixe de la zone courante pour que la lecture de la recette tombe
+// sur la bonne route.
+const RESERVED_SEGMENTS = ['store', 'super-admin', 'register', 'login'];
+
+function areaPrefix(): string {
+    const first = window.location.pathname.split('/').filter(Boolean)[0];
+    if (!first) return '';
+    if (first === 'store') return '/store';
+    if (RESERVED_SEGMENTS.includes(first)) return '';
+    return `/${first}`;
+}
+
 // ─── Searchable Select ────────────────────────────────────────────────────────
 
 interface SearchableSelectProps {
@@ -240,7 +254,7 @@ export default function RecipeModal({
     useEffect(() => {
         if (open && product && initialRecipeLines.length === 0) {
             setLoading(true);
-            fetch(`/products/${product!.id}/recipe`)
+            fetch(`${areaPrefix()}/products/${product!.id}/recipe`)
                 .then((res) => res.json())
                 .then((data: RecipeLine[]) => {
                     setLocalLines(

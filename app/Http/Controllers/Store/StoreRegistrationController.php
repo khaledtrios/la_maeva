@@ -41,7 +41,7 @@ class StoreRegistrationController extends Controller
                 'name' => $validated['owner_name'],
                 'email' => $validated['email'],
                 'password' => Hash::make($validated['password']),
-                'role' => StoreUserRole::StoreAdmin,
+                'role' => StoreUserRole::StoreAdmin->value,
                 'active' => true,
             ]);
         });

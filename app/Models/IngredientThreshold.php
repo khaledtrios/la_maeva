@@ -2,11 +2,25 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToStore;
+use App\Models\Scopes\StoreScope;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Model;
 
 class IngredientThreshold extends Model
 {
+    use BelongsToStore;
+
+    /**
+     * PHASE 4 — ÉTAPE 5 (groupe 3/Stocks) : cloisonnement automatique.
+     * PK composite (entity_id, ingredient_id) : sans effet sur le scope, qui
+     * filtre sur store_id independamment de la cle primaire.
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new StoreScope());
+    }
+
     /**
      * La table n'a pas de colonne id, clé primaire composite (entity_id, ingredient_id).
      */

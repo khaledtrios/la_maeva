@@ -19,28 +19,14 @@ class DashboardController extends Controller
         $storeAdmin = Auth::guard('store')->user();
 
         if ($storeAdmin) {
-            // Store Admin - charger l'entité associée au store
-            $store = $storeAdmin->store()->with('entity')->first();
-
-            // Vérifier que le store a une entity_id associée
-            if (!$store || !$store->entity_id) {
-                return Inertia::render('Dashboard', [
-                    'alerts'       => [],
-                    'laboData'     => null,
-                    'boutiqueData' => null,
-                    'factureStats' => [],
-                    'error'        => 'Votre boutique n\'est pas correctement configurée. Contactez l\'administrateur.',
-                ]);
-            }
-
-            $entityId   = $store->entity_id;
-            $entityType = $store->entity->type ?? 'LABO';
-        } else {
-            // Utilisateur interne - utiliser entity_id comme avant
-            $user       = Auth::user();
-            $entityId   = $user->entity_id;
-            $entityType = $user->entity->type;
+            // Rediriger le Store Admin vers son dashboard
+            return redirect()->route('store.dashboard');
         }
+
+        // Utilisateur interne (employé) - utiliser entity_id
+        $user = Auth::user();
+        $entityId = $user->entity_id;
+        $entityType = $user->entity->type;
 
         // Alertes stock ingrédients (labo)
         $alerts = InventoryService::getAlerts($entityId);

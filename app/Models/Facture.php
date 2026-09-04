@@ -2,12 +2,34 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToStore;
+use App\Models\Scopes\StoreScope;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Model;
 
 class Facture extends Model
 {
+    use BelongsToStore;
+
+    /**
+     * PHASE 4 — ÉTAPE 5 (groupe 7/Factures, DERNIER modèle) : cloisonnement
+     * automatique. Table à deux entités : entity_id = LABO émetteur (propriétaire
+     * du store_id, via resolveStoreIdFrom() par défaut du trait), boulangerie_id =
+     * destinataire. FactureController a déjà des contrôles manuels complets
+     * (authorizeView() sur show/pdf/validate/pay/cancel/destroy, garde store()
+     * pour le Store Admin) — cette activation est donc essentiellement de la
+     * défense en profondeur, pas la fermeture d'une fuite réelle (contrairement
+     * au groupe 6/CommandeUrgente). Effet de bord attendu : le route-model-binding
+     * (Facture $facture) ne trouvera plus une facture d'un autre store => 404 au
+     * lieu du 403 explicite d'authorizeView() sur pay/cancel/destroy/show, même
+     * mécanisme que les groupes 2 et 4.
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new StoreScope());
+    }
+
     protected $fillable = [
         'numero',
         'entity_id',

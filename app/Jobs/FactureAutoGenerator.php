@@ -6,9 +6,11 @@ use App\Models\{
     Facture,
     FactureSetting,
     Entity,
+    Store,
     User
 };
 use App\Services\FactureService;
+use App\Support\CurrentStore;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Log;
@@ -20,6 +22,17 @@ class FactureAutoGenerator implements ShouldQueue
 
     /**
      * Execute the job.
+     *
+     * Correctif P0 (audit final multi-tenant, 2026-09-04) : ce job tourne en
+     * queue, donc `CurrentStore::id()` vaut null (aucun guard authentifié) et
+     * le `StoreScope` d'`Entity`/`Facture` ne filtre rien. La version précédente
+     * prenait `Entity::where('type','LABO')->first()` — UN SEUL labo arbitraire
+     * sur toute la plateforme — et bouclait sur TOUTES les boulangeries tous
+     * stores confondus, produisant des factures mêlant le labo d'un store aux
+     * boulangeries d'un autre. Le traitement est désormais strictement
+     * store-par-store : chaque store résout SON PROPRE labo et SES PROPRES
+     * boulangeries via `CurrentStore::for()`, qui active `StoreScope` pour la
+     * durée du callback exactement comme le fait une requête HTTP normale.
      */
     public function handle(): void
     {
@@ -32,17 +45,7 @@ class FactureAutoGenerator implements ShouldQueue
 
         $service = app(FactureService::class);
 
-        // Récupérer toutes les boutiques
-        $boutiques = Entity::where('type', 'BOULANGERIE')->get();
-
-        // Récupérer le labo (unique)
-        $labo = Entity::where('type', 'LABO')->first();
-        if (!$labo) {
-            Log::error('[FactureAuto] Aucun labo trouvé — abort.');
-            return;
-        }
-
-        // Période : mois précédent
+        // Période : mois précédent (identique pour tous les stores)
         $now = Carbon::now();
         $dateFin = $now->copy()->subMonth()->endOfMonth()->toDateString();
         $dateDebut = $now->copy()->subMonth()->startOfMonth()->toDateString();
@@ -53,35 +56,52 @@ class FactureAutoGenerator implements ShouldQueue
             Log::warning('[FactureAuto] User SYSTEM non trouvé, génération avec null.');
         }
 
-        foreach ($boutiques as $boutique) {
-            try {
-                // Vérifier si facture existe déjà pour cette période
-                $exists = Facture::where('boulangerie_id', $boutique->id)
-                    ->where('periode_type', 'MOIS')
-                    ->where('date_debut', $dateDebut)
-                    ->where('date_fin', $dateFin)
-                    ->whereNotIn('statut', ['ANNULEE'])
-                    ->exists();
+        foreach (Store::all() as $store) {
+            if (!$store->isActive()) {
+                continue;
+            }
 
-                if ($exists) {
-                    Log::info("[FactureAuto] Facture MOIS déjà existante pour {$boutique->nom} — skip.");
-                    continue;
+            CurrentStore::for($store->id, function () use ($store, $service, $dateDebut, $dateFin, $generator) {
+                $labo = Entity::where('type', 'LABO')->first();
+                if (!$labo) {
+                    Log::warning("[FactureAuto] Aucun labo pour le store #{$store->id} ({$store->name}) — skip.");
+                    return;
                 }
 
-                $facture = $service->genererFacture(
-                    $boutique,
-                    $labo,
-                    'MOIS',
-                    $dateDebut,
-                    $dateFin,
-                    $generator,
-                    true
-                );
+                $boutiques = Entity::where('type', 'BOULANGERIE')->get();
 
-                Log::info("[FactureAuto] Facture MOIS générée : {$facture->numero} pour {$boutique->nom}");
-            } catch (\Exception $e) {
-                Log::error("[FactureAuto] Erreur pour {$boutique->nom}: " . $e->getMessage());
-            }
+                foreach ($boutiques as $boutique) {
+                    try {
+                        // Vérifier si facture existe déjà pour cette période
+                        $exists = Facture::where('entity_id', $labo->id)
+                            ->where('boulangerie_id', $boutique->id)
+                            ->where('periode_type', 'MOIS')
+                            ->where('date_debut', $dateDebut)
+                            ->where('date_fin', $dateFin)
+                            ->whereNotIn('statut', ['ANNULEE'])
+                            ->exists();
+
+                        if ($exists) {
+                            Log::info("[FactureAuto] Facture MOIS déjà existante pour {$boutique->nom} (store #{$store->id}) — skip.");
+                            continue;
+                        }
+
+                        $facture = $service->genererFacture(
+                            $boutique,
+                            $labo,
+                            'MOIS',
+                            $dateDebut,
+                            $dateFin,
+                            $generator,
+                            true
+                        );
+
+                        Log::info("[FactureAuto] Facture MOIS générée : {$facture->numero} pour {$boutique->nom} (store #{$store->id})");
+                    } catch (\Exception $e) {
+                        Log::error("[FactureAuto] Erreur pour {$boutique->nom} (store #{$store->id}): " . $e->getMessage());
+                    }
+                }
+            });
         }
     }
 }

@@ -18,8 +18,8 @@ class ExpeditionSeeder extends Seeder
      */
     public function run(): void
     {
-        $bakeries = [2, 3, 4]; // Maéva Cayenne, Maéva Soula, Mé Mo Toucho
-        $createdBy = 2; // Chef Labo Martin
+        $bakeries = [2, 3]; // Maéva Paris, Maéva Marseille
+        $createdBy = 1; // Chef Labo Cayenne
 
         // Jours d'expéditions : du 18 au 22 avril
         $dates = collect([
