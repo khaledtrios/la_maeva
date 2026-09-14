@@ -115,15 +115,18 @@ class TenantIsolatedDemoSeeder extends Seeder
             $labo->save();
         }
 
-        $boulangerie = Entity::firstOrCreate(
+        // `entities.store_id` est NOT NULL (Phase 4, vague 3a) et volontairement
+        // hors de $fillable : il faut donc créer la boulangerie DANS le contexte
+        // du store, sinon l'insert part sans store_id (MySQL 1364). Le rattraper
+        // après coup, comme c'était le cas, n'a jamais pu fonctionner : l'INSERT
+        // échoue avant. `CurrentStore::for()` fait les deux choses utiles ici :
+        // le trait BelongsToStore renseigne store_id à la création, et StoreScope
+        // limite la recherche aux entités DE CE STORE — deux stores peuvent
+        // légitimement avoir une boutique du même nom.
+        $boulangerie = CurrentStore::for($store->id, fn () => Entity::firstOrCreate(
             ['nom' => "Boutique {$store->name}"],
             ['type' => 'BOULANGERIE', 'adresse' => $store->address ?? 'Adresse boutique']
-        );
-
-        if ($boulangerie->store_id !== $store->id) {
-            $boulangerie->store_id = $store->id;
-            $boulangerie->save();
-        }
+        ));
 
         // Un employé du store pour les colonnes created_by (FK vers users)
         $auteurId = User::where('store_id', $store->id)->value('id')
