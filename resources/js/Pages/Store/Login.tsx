@@ -101,12 +101,12 @@ export default function Login() {
                     )}
                 </form>
 
-                <p className="store-login-footer-link">
+                {/* <p className="store-login-footer-link">
                     Pas encore de compte ?{' '}
                     <Link href={storeRegisterRoute.url()}>
                         Inscrivez votre boutique
                     </Link>
-                </p>
+                </p> */}
             </div>
 
             <style>{`

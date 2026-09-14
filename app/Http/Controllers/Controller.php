@@ -80,4 +80,54 @@ abstract class Controller
 
         return null;
     }
+
+    /**
+     * Identifiant à écrire dans les colonnes d'AUTEUR (`created_by`,
+     * `generated_by`…), qui portent toutes une clé étrangère vers `users`.
+     *
+     * POURQUOI CE HELPER EXISTE : `getCurrentUser()` renvoie un StoreUser pour
+     * le guard "store", et un StoreUser vit dans `store_users` — une table
+     * DISTINCTE de `users`. Écrire son `id` dans `created_by` est donc faux :
+     *   - si aucune ligne `users` ne porte cet id, l'INSERT viole la FK et
+     *     l'enregistrement échoue (erreur 500) ;
+     *   - si une ligne existe par coïncidence d'auto-increment (le cas courant,
+     *     les deux tables partant de 1), la production est silencieusement
+     *     attribuée à un EMPLOYÉ D'UN AUTRE STORE — une fuite d'attribution
+     *     inter-tenant qui ne lève aucune erreur.
+     *
+     * Résolution pour le guard "store" : l'employé `users` de MÊME EMAIL dans le
+     * même store (le Store Admin qui possède aussi un compte employé), sinon le
+     * premier employé actif du store. La recherche est toujours bornée par
+     * `store_id` : jamais d'auteur emprunté à un autre tenant.
+     *
+     * Renvoie null si le store n'a aucun employé : à l'appelant de refuser
+     * l'écriture avec un message explicite plutôt que d'insérer n'importe quoi.
+     */
+    protected function getCurrentUserIdForAttribution(): ?int
+    {
+        $user = $this->getCurrentUser();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Guard "web" : l'utilisateur EST déjà une ligne de `users`.
+        if (!$this->isStoreAdmin()) {
+            return $user->id;
+        }
+
+        $storeId = $user->store_id;
+
+        if (!$storeId) {
+            return null;
+        }
+
+        return \App\Models\User::where('store_id', $storeId)
+                ->where('email', $user->email)
+                ->value('id')
+            ?? \App\Models\User::where('store_id', $storeId)
+                ->where('active', true)
+                ->orderBy('id')
+                ->value('id');
+    }
 }

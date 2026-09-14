@@ -148,8 +148,8 @@ class InventoryController extends Controller
      */
     public function getBalances(Request $request, Ingredient $ingredient)
     {
-        $user = Auth::user();
-        $entityId = $user->entity_id;
+        // Lecture : meme resolution dual-guard que index().
+        $entityId = $this->getCurrentEntityId();
 
         $balances = StockBalance::with('ingredient')
             ->where('entity_id', $entityId)
@@ -168,8 +168,8 @@ class InventoryController extends Controller
      */
     public function lotsIndex(Request $request)
     {
-        $user = Auth::user();
-        $entityId = $user->entity_id;
+        // Lecture : meme resolution dual-guard que index().
+        $entityId = $this->getCurrentEntityId();
         $entity = Entity::findOrFail($entityId);
 
         // Récupérer toutes les balances groupées par ingrédient
@@ -234,8 +234,17 @@ class InventoryController extends Controller
      */
     public function update(Request $request, Ingredient $ingredient)
     {
-        $user     = Auth::user();
-        $entityId = $user->entity_id;
+        // `Auth::user()` resout le guard par defaut ("web") : null pour un
+        // Store Admin (guard "store"), d'ou une erreur fatale sur ->entity_id.
+        // Meme correctif que ProductionController::batch().
+        $entityId = $this->getCurrentEntityId();
+        $auteurId = $this->getCurrentUserIdForAttribution();
+
+        if (!$entityId || !$auteurId) {
+            return back()->withErrors([
+                'inventory' => "Compte incomplet (entite ou employe manquant) : impossible de mettre a jour le stock.",
+            ]);
+        }
 
         $validated = $request->validate([
             'quantite'       => ['nullable', 'numeric', 'min:0'],
@@ -243,13 +252,19 @@ class InventoryController extends Controller
             'stock_max'      => ['nullable', 'numeric', 'min:0'],
         ]);
 
-        DB::transaction(function () use ($validated, $entityId, $ingredient) {
+        DB::transaction(function () use ($validated, $entityId, $ingredient, $auteurId) {
             // 1. Mettre à jour les seuils dans ingredient_thresholds
             $thresholdData = [];
             if (array_key_exists('seuil_minimum', $validated) || array_key_exists('stock_max', $validated)) {
                 $thresholdData['seuil_minimum'] = $validated['seuil_minimum'] ?? null;
                 $thresholdData['stock_max'] = $validated['stock_max'] ?? null;
                 $thresholdData['updated_at'] = now();
+                // `ingredient_thresholds.store_id` est NOT NULL (vague 3b). La
+                // ligne est ecrite via le QUERY BUILDER : le trait BelongsToStore
+                // ne s'applique pas et ne peut donc pas remplir `store_id`. Sans
+                // cette ligne, toute creation de seuil echoue (« Field 'store_id'
+                // doesn't have a default value »).
+                $thresholdData['store_id'] = Entity::whereKey($entityId)->value('store_id');
 
                 DB::table('ingredient_thresholds')->updateOrInsert(
                     [
@@ -279,7 +294,7 @@ class InventoryController extends Controller
                         [
                             'reference' => 'Ajustement manuel via formulaire',
                             'notes' => "Ajustement direct: {$currentStock} → {$validated['quantite']}",
-                            'created_by' => Auth::user()->id,
+                            'created_by' => $auteurId,
                         ]
                     );
                 }
@@ -295,8 +310,17 @@ class InventoryController extends Controller
      */
     public function createIngredientWithStock(Request $request)
     {
-        $user     = Auth::user();
-        $entityId = $user->entity_id;
+        // `Auth::user()` resout le guard par defaut ("web") : null pour un
+        // Store Admin (guard "store"), d'ou une erreur fatale sur ->entity_id.
+        // Meme correctif que ProductionController::batch().
+        $entityId = $this->getCurrentEntityId();
+        $auteurId = $this->getCurrentUserIdForAttribution();
+
+        if (!$entityId || !$auteurId) {
+            return back()->withErrors([
+                'inventory' => "Compte incomplet (entite ou employe manquant) : impossible de creer l'ingredient.",
+            ]);
+        }
 
         $validated = $request->validate([
             'nom'           => ['required', 'string', 'max:255'],
@@ -307,7 +331,7 @@ class InventoryController extends Controller
             'stock_max'     => ['nullable', 'numeric', 'min:0'],
         ]);
 
-        $ingredient = DB::transaction(function () use ($validated, $entityId, $user) {
+        $ingredient = DB::transaction(function () use ($validated, $entityId, $auteurId) {
 
             // 1. Créer l'ingrédient
             $ingredient = Ingredient::create([
@@ -340,7 +364,7 @@ class InventoryController extends Controller
                         'lot_number' => 'CREATION-' . $ingredient->id . '-' . now()->format('YmdHis'),
                         'reference'  => 'Création ingrédient',
                         'notes'      => "Stock initial à la création de l'ingrédient",
-                        'created_by' => $user->id,
+                        'created_by' => $auteurId,
                     ]
                 );
             }
@@ -361,8 +385,19 @@ class InventoryController extends Controller
      */
     public function adjustBatch(Request $request)
     {
-        $user = Auth::user();
-        $entityId = $user->entity_id;
+        // `Auth::user()` resout le guard par defaut ("web") : null pour un
+        // Store Admin (guard "store"), d'ou une erreur fatale sur ->entity_id.
+        // Meme correctif que ProductionController::batch().
+        $entityId = $this->getCurrentEntityId();
+        // `stock_movements.created_by` reference `users` : l'id d'un StoreUser
+        // n'y est pas valide (cf. getCurrentUserIdForAttribution).
+        $auteurId = $this->getCurrentUserIdForAttribution();
+
+        if (!$entityId || !$auteurId) {
+            return back()->withErrors([
+                'inventory' => "Compte incomplet (entite ou employe manquant) : impossible d'ajuster le stock.",
+            ]);
+        }
 
         $validated = $request->validate([
             'adjustments' => ['required', 'array', 'min:1'],
@@ -372,7 +407,7 @@ class InventoryController extends Controller
         ]);
 
         $count = 0;
-        DB::transaction(function () use ($validated, $entityId, $user, &$count) {
+        DB::transaction(function () use ($validated, $entityId, $auteurId, &$count) {
             foreach ($validated['adjustments'] as $adj) {
                 $adjustment = (float) $adj['adjustment'];
 
@@ -388,7 +423,7 @@ class InventoryController extends Controller
                     [
                         'reference' => 'Ajustement batch inline',
                         'notes' => $adj['note'] ?? 'Ajustement depuis l\'interface stocks',
-                        'created_by' => $user->id,
+                        'created_by' => $auteurId,
                     ]
                 );
                 $count++;

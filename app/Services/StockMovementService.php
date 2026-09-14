@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Entity;
 use App\Models\StockBalance;
 use App\Models\StockMovement;
 use App\Models\Production;
@@ -12,6 +13,21 @@ use Illuminate\Support\Facades\Log;
 
 class StockMovementService
 {
+    /**
+     * Store proprietaire d'une entite.
+     *
+     * `stock_balances.store_id` est NOT NULL (Phase 4, vague 3b) mais les
+     * balances sont ecrites via le QUERY BUILDER (`DB::table()->updateOrInsert`)
+     * et non via le modele : le trait BelongsToStore, qui remplit `store_id` a
+     * la creation, NE S'APPLIQUE PAS. Toute nouvelle ligne de balance partait
+     * donc sans `store_id` et l'INSERT echouait (« Field 'store_id' doesn't have
+     * a default value »). C'est cette meme resolution que fait le trait.
+     */
+    private static function storeIdPourEntite(int $entityId): ?int
+    {
+        return Entity::whereKey($entityId)->value('store_id');
+    }
+
     /**
      * Créer un mouvement d'entrée (réception de stock pour ingrédients).
      *
@@ -39,7 +55,12 @@ class StockMovementService
                 'provenance'    => $options['provenance'] ?? null,
                 'reference'     => $options['reference'] ?? null,
                 'notes'         => $options['notes'] ?? null,
-                'created_by'    => Auth::id(),
+                // `Auth::id()` seul resout le guard par defaut ("web") : il vaut
+                // null pour un Store Admin (guard "store") et l'INSERT echouait
+                // (`created_by` est NOT NULL). L'appelant fournit desormais
+                // l'auteur resolu ; meme convention que consumeIngredientFIFO()
+                // et createSortie() plus bas.
+                'created_by'    => $options['created_by'] ?? Auth::id(),
             ]);
 
             // 2. Mettre à jour la balance (stock_balances.dlc fait partie de la PK → doit être non-null)
@@ -56,6 +77,7 @@ class StockMovementService
             DB::table('stock_balances')->updateOrInsert(
                 $key,
                 [
+                    'store_id'   => self::storeIdPourEntite($entityId),
                     'quantite'   => DB::raw('COALESCE(quantite, 0) + ' . $quantite),
                     'updated_at' => now(),
                 ]
@@ -87,7 +109,12 @@ class StockMovementService
                 'provenance'    => $options['provenance'] ?? null,
                 'reference'     => $options['reference'] ?? null,
                 'notes'         => $options['notes'] ?? 'Ajustement manuel',
-                'created_by'    => Auth::id(),
+                // `Auth::id()` seul resout le guard par defaut ("web") : il vaut
+                // null pour un Store Admin (guard "store") et l'INSERT echouait
+                // (`created_by` est NOT NULL). L'appelant fournit desormais
+                // l'auteur resolu ; meme convention que consumeIngredientFIFO()
+                // et createSortie() plus bas.
+                'created_by'    => $options['created_by'] ?? Auth::id(),
             ]);
 
             DB::table('stock_balances')->updateOrInsert(
@@ -98,6 +125,7 @@ class StockMovementService
                     'lot_number'    => $lotNumber,
                 ],
                 [
+                    'store_id'   => self::storeIdPourEntite($entityId),
                     'quantite'   => DB::raw('COALESCE(quantite, 0) + ' . $quantite),
                     'updated_at' => now(),
                 ]
@@ -315,6 +343,7 @@ class StockMovementService
             DB::table('stock_balances')->updateOrInsert(
                 $key,
                 [
+                    'store_id'   => self::storeIdPourEntite($entityId),
                     'quantite'   => DB::raw('COALESCE(quantite, 0) + ' . $quantity),
                     'updated_at' => now(),
                 ]

@@ -73,6 +73,15 @@ export default function InventoryIndex({
 }: InventoryIndexProps) {
     const { hasRole } = useAuth();
 
+    // Le Store Admin (guard "store") porte le role STORE_ADMIN, absent des
+    // gardes historiques ecrites pour l'espace Employe : sur /store/inventory
+    // la colonne Actions, le bouton « Sauver tout » et les entrees de stock
+    // disparaissaient donc entierement, rendant la page lisible mais NON
+    // modifiable. Il est le proprietaire de sa boutique : il gere son stock au
+    // moins autant qu'un RESP_LABO, et le back-office l'autorise deja
+    // (routes /store/inventory/*, cloisonnees par store).
+    const canManageStock = hasRole('ADMIN', 'RESP_LABO', 'STORE_ADMIN');
+
     const [ingredientModalOpen, setIngredientModalOpen] = useState(false);
 
     const [stockEntryModalOpen, setStockEntryModalOpen] = useState(false);
@@ -497,7 +506,7 @@ export default function InventoryIndex({
                         <span className="btn-sec__label">Mouvements</span>
                     </Link>
 
-                    {hasRole('ADMIN', 'RESP_LABO') && (
+                    {canManageStock && (
                         <>
                             <button
                                 className="btn-sec"
@@ -727,7 +736,7 @@ export default function InventoryIndex({
                         </div>
                     </div>
 
-                    {dirtyRowsCount > 0 && hasRole('ADMIN', 'RESP_LABO') && (
+                    {dirtyRowsCount > 0 && canManageStock && (
                         <button onClick={saveAll} className="btn-save-all">
                             <Save size={13} strokeWidth={1.5} />
                             Sauver tout ({dirtyRowsCount})
@@ -1162,7 +1171,7 @@ export default function InventoryIndex({
 
                                         <th className="ta-c">Statut</th>
 
-                                        {hasRole('ADMIN', 'RESP_LABO') && (
+                                        {canManageStock && (
                                             <th className="ta-c">Actions</th>
                                         )}
                                     </tr>
@@ -1392,11 +1401,7 @@ export default function InventoryIndex({
                                                     </span>
                                                 </td>
 
-                                                {hasRole(
-                                                    'ADMIN',
-
-                                                    'RESP_LABO',
-                                                ) && (
+                                                {canManageStock && (
                                                     <td className="ta-c">
                                                         <div className="d-actions">
                                                             {dirty && (

@@ -451,6 +451,14 @@ Route::middleware('auth:store')->group(function () {
         // Production (CRUD)
         Route::get('/store/production', [ProductionController::class, 'index'])->name('store.production');
         Route::post('/store/production', [ProductionController::class, 'store'])->name('store.production.store');
+        // Les routes littérales DOIVENT précéder `/{production}` : sans cela,
+        // « batch » est capté comme un paramètre de route et POST renvoie un 405
+        // « Supported methods: PUT, DELETE » au lieu d'atteindre le contrôleur.
+        // La page Production/Index est partagée avec l'espace Employé et appelle
+        // `/production/batch` ; le filet de app.tsx la réécrit en
+        // `/store/production/batch`, qui doit donc exister ici.
+        Route::post('/store/production/batch', [ProductionController::class, 'batch'])->name('store.production.batch');
+        Route::post('/store/production/distribuer', [ProductionController::class, 'distribuer'])->name('store.production.distribuer');
         Route::put('/store/production/{production}', [ProductionController::class, 'update'])->name('store.production.update');
         Route::delete('/store/production/{production}', [ProductionController::class, 'destroy'])->name('store.production.destroy');
 
@@ -463,15 +471,28 @@ Route::middleware('auth:store')->group(function () {
         Route::put('/store/products/{product}/recipe', [ProductController::class, 'updateRecipe'])->name('store.products.recipe.update');
 
         // Stocks (READ + ADJUST)
-        Route::get('/store/stocks', [StockController::class, 'index'])->name('store.stocks');
-        Route::post('/store/stocks/adjust', [StockController::class, 'adjust'])->name('store.stocks.adjust');
-        Route::get('/store/stocks/movements', [StockController::class, 'movements'])->name('store.stocks.movements');
+        // URI au SINGULIER (`stock`), comme l'espace Employé (`Route::prefix('stock')`).
+        // Toutes les autres routes de cet espace reprennent le chemin employé
+        // précédé de /store (/store/production, /store/inventory…) ; « stocks »
+        // était le seul écart. Les pages CRM sont partagées et génèrent des URLs
+        // au singulier (« /stock/movements ») que le filet de app.tsx préfixe en
+        // « /store/stock/movements » : avec l'ancien pluriel, ce lien tombait
+        // sur un 404. Les NOMS de route sont inchangés (`store.stocks*`), donc
+        // AppLayout et Store/Dashboard, qui passent par Wayfinder, ne bougent pas.
+        Route::get('/store/stock', [StockController::class, 'index'])->name('store.stocks');
+        Route::post('/store/stock/adjust', [StockController::class, 'adjust'])->name('store.stocks.adjust');
+        Route::get('/store/stock/movements', [StockController::class, 'movements'])->name('store.stocks.movements');
 
         // Inventory (CRUD + movements)
         Route::get('/store/inventory', [InventoryController::class, 'index'])->name('store.inventory');
         Route::get('/store/inventory/lots', [InventoryController::class, 'lotsIndex'])->name('store.inventory.lots');
-        Route::put('/store/inventory/{ingredient}', [InventoryController::class, 'update'])->name('store.inventory.update');
+        // `adjust-batch` DOIT précéder `/{ingredient}` : les deux répondent en
+        // PUT et Laravel retient la PREMIÈRE route déclarée qui correspond.
+        // Déclarée après, l'URL tombait sur `update()` avec « adjust-batch »
+        // comme identifiant d'ingrédient — l'ajustement de stock n'atteignait
+        // jamais `adjustBatch()`.
         Route::put('/store/inventory/adjust-batch', [InventoryController::class, 'adjustBatch'])->name('store.inventory.adjust-batch');
+        Route::put('/store/inventory/{ingredient}', [InventoryController::class, 'update'])->name('store.inventory.update');
         Route::post('/store/inventory/create-ingredient', [InventoryController::class, 'createIngredientWithStock'])->name('store.inventory.create-ingredient');
         Route::get('/store/inventory/movements', [StockMovementController::class, 'index'])->name('store.inventory.movements');
         Route::post('/store/inventory/movements/entree', [StockMovementController::class, 'store'])->name('store.inventory.movements.entree');

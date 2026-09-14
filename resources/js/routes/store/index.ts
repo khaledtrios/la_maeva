@@ -207,7 +207,7 @@ export const stocks = (options?: RouteQueryOptions): RouteDefinition<'get'> => (
 
 stocks.definition = {
     methods: ["get","head"],
-    url: '/store/stocks',
+    url: '/store/stock',
 } satisfies RouteDefinition<["get","head"]>
 
 stocks.url = (options?: RouteQueryOptions) => {

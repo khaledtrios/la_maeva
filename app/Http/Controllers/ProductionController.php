@@ -283,8 +283,16 @@ class ProductionController extends Controller
      */
     public function store(Request $request)
     {
-        $user     = $this->getCurrentUser();
         $entityId = $this->getCurrentEntityId();
+        // Même contrainte que dans batch() : `created_by` référence `users`,
+        // or un Store Admin est une ligne de `store_users`.
+        $auteurId = $this->getCurrentUserIdForAttribution();
+
+        if (!$auteurId) {
+            return back()->withErrors([
+                'production' => "Aucun employé actif rattaché à votre boutique : créez-en un avant d'enregistrer une production.",
+            ]);
+        }
 
         $validated = $request->validate([
             'product_id'      => ['required', 'integer', 'exists:products,id'],
@@ -312,7 +320,7 @@ class ProductionController extends Controller
             }
         }
 
-        DB::transaction(function () use ($validated, $user, $entityId, $recipes) {
+        DB::transaction(function () use ($validated, $auteurId, $entityId, $recipes) {
             $production = Production::create([
                 'entity_id'       => $entityId,
                 'product_id'      => $validated['product_id'],
@@ -320,7 +328,7 @@ class ProductionController extends Controller
                 'quantite_pertes' => $validated['quantite_pertes'] ?? 0,
                 'lot'             => $validated['lot'] ?? null,
                 'date'            => $validated['date'],
-                'created_by'      => $user->id,
+                'created_by'      => $auteurId,
             ]);
 
             // Déduction du stock via FIFO
@@ -333,7 +341,7 @@ class ProductionController extends Controller
                     $consommation,
                     [
                         'reference'  => 'PROD #' . $production->id,
-                        'created_by' => $user->id,
+                        'created_by' => $auteurId,
                     ]
                 );
             }
@@ -393,9 +401,17 @@ class ProductionController extends Controller
      */
     public function distribuer(Request $request)
     {
-        $user     = $this->getCurrentUser();
         $entityId = $this->getCurrentEntityId();
+        // `expeditions.created_by` référence `users` comme `productions` :
+        // même résolution que dans store() et batch().
+        $auteurId = $this->getCurrentUserIdForAttribution();
         $date     = $request->input('date', now()->toDateString());
+
+        if (!$auteurId) {
+            return back()->withErrors([
+                'production' => "Aucun employé actif rattaché à votre boutique : créez-en un avant de distribuer.",
+            ]);
+        }
 
         // Récupérer toutes les productions du jour pour cette entité
         $productions = Production::where('entity_id', $entityId)
@@ -440,7 +456,7 @@ class ProductionController extends Controller
         }
 
         try {
-            DB::transaction(function () use ($byProduct, $boulangeries, $date, $entityId, $user, $nbBoutiques) {
+            DB::transaction(function () use ($byProduct, $boulangeries, $date, $entityId, $auteurId, $nbBoutiques) {
                 foreach ($boulangeries as $b) {
                     $lines = collect($byProduct)
                         ->map(fn($total, $pid) => [
@@ -459,7 +475,7 @@ class ProductionController extends Controller
                         'boulangerie_id' => $b->id,
                         'date'           => $date,
                         'statut'         => 'BROUILLON',
-                        'created_by'     => $user->id,
+                        'created_by'     => $auteurId,
                     ]);
 
                     // Créer les lignes d'expédition avec allocation FIFO
@@ -500,13 +516,33 @@ class ProductionController extends Controller
      */
     public function batch(Request $request)
     {
-        $user     = Auth::user();
-        $entityId = $user->entity_id;
+        // `Auth::user()` résout le guard PAR DÉFAUT ("web") : pour un Store Admin
+        // (guard "store") il renvoyait null, et `$user->entity_id` levait une
+        // erreur fatale. `batch()` était la SEULE méthode du contrôleur restée
+        // sur Auth::user() — toutes les autres passent déjà par ces deux
+        // helpers, qui gèrent les deux guards.
+        $entityId = $this->getCurrentEntityId();
+        // `created_by` porte une FK vers `users` : l'id d'un StoreUser n'y est
+        // pas valide (cf. getCurrentUserIdForAttribution).
+        $auteurId = $this->getCurrentUserIdForAttribution();
         $date     = $request->input('date', now()->toDateString());
+
+        if (!$entityId) {
+            return back()->withErrors([
+                'production' => "Aucune entité rattachée à votre compte : impossible d'enregistrer la production.",
+            ]);
+        }
+
+        if (!$auteurId) {
+            return back()->withErrors([
+                'production' => "Aucun employé actif rattaché à votre boutique : créez-en un avant d'enregistrer une production.",
+            ]);
+        }
+
         $lignes   = $request->input('productions', []);
 
         try {
-            DB::transaction(function () use ($lignes, $user, $entityId, $date) {
+            DB::transaction(function () use ($lignes, $auteurId, $entityId, $date) {
                 foreach ($lignes as $ligne) {
                     $productId = $ligne['product_id'];
                     $quantite  = (int) ($ligne['quantite'] ?? 0);
@@ -556,7 +592,7 @@ class ProductionController extends Controller
                                         $recipe->quantite * $difference,
                                         [
                                             'reference'  => 'PROD BATCH ' . ($ancienne ? 'UPDATE #' . $ancienne->id : 'CREATE'),
-                                            'created_by' => $user->id,
+                                            'created_by' => $auteurId,
                                         ]
                                     );
                                 }
@@ -573,7 +609,7 @@ class ProductionController extends Controller
                                             'lot_number' => 'RETOUR-PROD-' . ($ancienne?->id ?? 'NEW') . '-' . time(),
                                             'reference'  => 'Retour production (réduction)',
                                             'notes'      => "Retour de {$remettre} unités nettes",
-                                            'created_by' => $user->id,
+                                            'created_by' => $auteurId,
                                         ]
                                     );
                                 }
@@ -596,7 +632,7 @@ class ProductionController extends Controller
                             'quantite_pertes' => $pertes,
                             'lot'             => $lot,
                             'date'            => $date,
-                            'created_by'      => $user->id,
+                            'created_by'      => $auteurId,
                         ]);
                     }
                 }

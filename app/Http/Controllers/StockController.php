@@ -170,8 +170,17 @@ class StockController extends Controller
      */
     public function adjust(Request $request)
     {
-        $user = $this->getCurrentUser();
         $this->authorizeRole(['RESP_BOUTIQUE', 'ADMIN', 'STORE_ADMIN']);
+
+        // `stock_movements.created_by` reference `users` : l'id d'un StoreUser
+        // n'y est pas valide (cf. getCurrentUserIdForAttribution).
+        $auteurId = $this->getCurrentUserIdForAttribution();
+
+        if (!$auteurId) {
+            return back()->withErrors([
+                'stock' => "Aucun employé actif rattaché à votre boutique : créez-en un avant d'ajuster le stock.",
+            ]);
+        }
 
         $validated = $request->validate([
             'product_id'      => ['required', 'integer', 'exists:products,id'],
@@ -186,7 +195,7 @@ class StockController extends Controller
         $raison = $validated['raison'];
         $lotNumber = $validated['lot_number'] ?? null;
 
-        DB::transaction(function () use ($entityId, $productId, $delta, $raison, $lotNumber, $user) {
+        DB::transaction(function () use ($entityId, $productId, $delta, $raison, $lotNumber, $auteurId) {
             // Trouver le lot cible
             $query = StockBalance::where('entity_id', $entityId)
                 ->where('product_id', $productId)
@@ -238,7 +247,7 @@ class StockController extends Controller
                 'dlc'            => $lot->dlc,
                 'lot_number'     => $lot->lot_number,
                 'notes'          => "Ajustement: {$raison} (lot {$lot->lot_number}, {$oldQty}→{$newQty})",
-                'created_by'     => $user->id,
+                'created_by'     => $auteurId,
                 'movement_date'  => now()->toDateString(),
             ]);
         });
@@ -300,8 +309,13 @@ class StockController extends Controller
      */
     private function authorizeRole(array $roles): void
     {
-        $user = Auth::user();
-        if (!in_array($user->role, $roles, true)) {
+        // `Auth::user()` resout le guard par defaut ("web") : null pour un Store
+        // Admin (guard "store"), donc `$user->role` levait une erreur fatale
+        // AVANT meme le controle -- alors que STORE_ADMIN figure bien dans la
+        // liste autorisee. `getCurrentUser()` gere les deux guards.
+        $user = $this->getCurrentUser();
+
+        if (!$user || !in_array($user->role, $roles, true)) {
             abort(403, 'Accès non autorisé.');
         }
     }
