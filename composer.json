@@ -6,7 +6,7 @@
     "require": {
         "php": "^8.2",
         "laravel/framework": "^13.6.0",
-        "inertiajs/inertia-laravel": "^1.0.0"
+        "inertiajs/inertia-laravel": "^3.0"
     },
     "require-dev": {},
     "autoload": {
