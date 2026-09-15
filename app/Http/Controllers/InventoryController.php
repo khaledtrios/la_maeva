@@ -15,6 +15,29 @@ use Inertia\Inertia;
 class InventoryController extends Controller
 {
     /**
+     * Resout l'ingredient depuis le parametre de route `{ingredient}`.
+     *
+     * Les routes inventaire existent en DEUX declinaisons : sous
+     * /{slug}/inventory (espace Employe) et sous /store/inventory (espace Store
+     * Admin). Laravel injecte les parametres de route par POSITION : avec un
+     * `Ingredient $ingredient` type-hinte, la variante /{slug} passait le SLUG
+     * (string) a la place du modele -> TypeError 500. On recupere donc le
+     * parametre PAR SON NOM, ce qui fonctionne pour les deux declinaisons.
+     * Le StoreScope global sur Ingredient conserve le cloisonnement (pas
+     * d'IDOR inter-store). Meme motif que ProductController::resolveProduct().
+     */
+    private function resolveIngredient(Request $request): Ingredient
+    {
+        $ingredient = $request->route('ingredient');
+
+        if ($ingredient instanceof Ingredient) {
+            return $ingredient;
+        }
+
+        return Ingredient::findOrFail($ingredient);
+    }
+
+    /**
      * Page Stocks — affiche les items d'inventaire de l'entité + alertes
      * Migration: utilise maintenant stock_balances comme source de vérité
      * avec seuils depuis ingredient_thresholds
@@ -232,8 +255,10 @@ class InventoryController extends Controller
      * PUT /inventory/{ingredient} — met à jour les seuils et ajuste le stock si nécessaire
      * Migration: utilise StockMovementService pour les ajustements + ingredient_thresholds pour les seuils
      */
-    public function update(Request $request, Ingredient $ingredient)
+    public function update(Request $request)
     {
+        $ingredient = $this->resolveIngredient($request);
+
         // `Auth::user()` resout le guard par defaut ("web") : null pour un
         // Store Admin (guard "store"), d'ou une erreur fatale sur ->entity_id.
         // Meme correctif que ProductionController::batch().

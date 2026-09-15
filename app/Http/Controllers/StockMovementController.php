@@ -19,8 +19,9 @@ class StockMovementController extends Controller
      */
     public function index(Request $request)
     {
-        $user = Auth::user();
-        $entityId = $user->entity_id;
+        // `Auth::user()` resout le guard par defaut ("web") : null pour un
+        // Store Admin (guard "store"). Les helpers gerent les deux guards.
+        $entityId = $this->getCurrentEntityId();
 
         $query = StockMovement::with(['ingredient', 'product', 'creator', 'entity'])
             ->where('entity_id', $entityId);
@@ -109,8 +110,21 @@ class StockMovementController extends Controller
      */
     public function store(Request $request)
     {
-        $user = Auth::user();
-        $this->authorizeRole(['ADMIN', 'RESP_LABO']);
+        // STORE_ADMIN ajoute : le proprietaire de la boutique gere son stock au
+        // moins autant qu'un RESP_LABO, et l'interface lui expose le bouton.
+        $this->authorizeRole(['ADMIN', 'RESP_LABO', 'STORE_ADMIN']);
+
+        // `Auth::user()` resout le guard par defaut ("web") : null pour un
+        // Store Admin (guard "store"). Les helpers gerent les deux guards.
+        $entityId = $this->getCurrentEntityId();
+        // `stock_movements.created_by` reference `users`, pas `store_users`.
+        $auteurId = $this->getCurrentUserIdForAttribution();
+
+        if (!$entityId || !$auteurId) {
+            return back()->withErrors([
+                'stock' => "Compte incomplet (entite ou employe manquant) : impossible d'enregistrer l'entree.",
+            ]);
+        }
 
         $validated = $request->validate([
             'ingredient_id' => ['required', 'integer', 'exists:ingredients,id'],
@@ -123,7 +137,7 @@ class StockMovementController extends Controller
         ]);
 
         $movement = StockMovementService::createEntree(
-            $user->entity_id,
+            $entityId,
             $validated['ingredient_id'],
             $validated['quantite'],
             [
@@ -132,6 +146,7 @@ class StockMovementController extends Controller
                 'provenance' => $validated['provenance'] ?? null,
                 'reference'  => $validated['reference'] ?? null,
                 'notes'      => $validated['notes'] ?? null,
+                'created_by' => $auteurId,
             ]
         );
 
@@ -147,8 +162,18 @@ class StockMovementController extends Controller
      */
     public function ajustement(Request $request)
     {
-        $user = Auth::user();
-        $this->authorizeRole(['ADMIN', 'RESP_LABO']);
+        $this->authorizeRole(['ADMIN', 'RESP_LABO', 'STORE_ADMIN']);
+
+        // `Auth::user()` resout le guard par defaut ("web") : null pour un
+        // Store Admin (guard "store"). Les helpers gerent les deux guards.
+        $entityId = $this->getCurrentEntityId();
+        $auteurId = $this->getCurrentUserIdForAttribution();
+
+        if (!$entityId || !$auteurId) {
+            return back()->withErrors([
+                'stock' => "Compte incomplet (entite ou employe manquant) : impossible d'ajuster le stock.",
+            ]);
+        }
 
         $validated = $request->validate([
             'ingredient_id' => ['required', 'integer', 'exists:ingredients,id'],
@@ -159,13 +184,14 @@ class StockMovementController extends Controller
         ]);
 
         $movement = StockMovementService::createAjustement(
-            $user->entity_id,
+            $entityId,
             $validated['ingredient_id'],
             $validated['quantite'],
             [
                 'provenance' => $validated['provenance'] ?? null,
                 'reference'  => $validated['reference'] ?? null,
                 'notes'      => $validated['notes'] ?? 'Ajustement manuel',
+                'created_by' => $auteurId,
             ]
         );
 
@@ -181,10 +207,14 @@ class StockMovementController extends Controller
      * Obtenir les balances FIFO d'un ingrédient (pour sélection lors de consommation).
      * Utilisé par le frontend pour afficher les lots disponibles.
      */
-    public function getBalances(Request $request, int $ingredientId)
+    public function getBalances(Request $request)
     {
-        $user = Auth::user();
-        $entityId = $user->entity_id;
+        // Parametre recupere PAR SON NOM : sous /{slug}/... Laravel injecte les
+        // parametres par POSITION, donc un 2e argument type-hinte recevait le
+        // SLUG au lieu de l'ingredient. Meme motif que
+        // InventoryController::resolveIngredient().
+        $ingredientId = (int) $request->route('ingredient');
+        $entityId = $this->getCurrentEntityId();
 
         $balances = StockBalance::with(['ingredient'])
             ->where('entity_id', $entityId)
@@ -202,18 +232,18 @@ class StockMovementController extends Controller
      */
     public function getAlerts()
     {
-        $user = Auth::user();
+        $entityId = $this->getCurrentEntityId();
         $today = now()->toDateString();
 
         $expired = StockBalance::with('ingredient')
-            ->where('entity_id', $user->entity_id)
+            ->where('entity_id', $entityId)
             ->whereNotNull('dlc')
             ->where('dlc', '<=', $today)
             ->where('quantite', '>', 0)
             ->get();
 
         $expiringSoon = StockBalance::with('ingredient')
-            ->where('entity_id', $user->entity_id)
+            ->where('entity_id', $entityId)
             ->whereNotNull('dlc')
             ->where('dlc', '>', $today)
             ->where('dlc', '<=', now()->addDays(3)->toDateString())
@@ -233,14 +263,14 @@ class StockMovementController extends Controller
      */
     public function previewConsumption(Request $request)
     {
-        $user = Auth::user();
+        $entityId = $this->getCurrentEntityId();
 
         $validated = $request->validate([
             'ingredient_id' => ['required', 'integer', 'exists:ingredients,id'],
             'quantite'      => ['required', 'numeric', 'min:0.001'],
         ]);
 
-        $balances = StockBalance::where('entity_id', $user->entity_id)
+        $balances = StockBalance::where('entity_id', $entityId)
             ->where('ingredient_id', $validated['ingredient_id'])
             ->where('quantite', '>', 0)
             ->orderBy('dlc', 'asc')
@@ -282,8 +312,11 @@ class StockMovementController extends Controller
      */
     private function authorizeRole(array $roles): void
     {
-        $user = Auth::user();
-        if (!in_array($user->role, $roles, true)) {
+        // Idem : `Auth::user()` est null pour le guard "store" et `$user->role`
+        // levait une erreur fatale AVANT le controle.
+        $user = $this->getCurrentUser();
+
+        if (!$user || !in_array($user->role, $roles, true)) {
             abort(403, 'Accès non autorisé.');
         }
     }
